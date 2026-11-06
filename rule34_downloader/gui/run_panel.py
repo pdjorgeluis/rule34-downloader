@@ -39,6 +39,9 @@ class RunPanel(QWidget):
 
         self.query_label = mk(QLabel, "query_label")
         self.dest_label = mk(QLabel, "dest_label")
+        self.panel_found_label = mk(QLabel, "panel_found_label")
+        self.panel_found_label.setWordWrap(True)
+        self.panel_found_label.hide()
         self.banner = mk(QLabel, "banner")
         self.banner.setWordWrap(True)
         self.banner.hide()
@@ -63,7 +66,8 @@ class RunPanel(QWidget):
         self.back_button = mk(QPushButton, "back_button", "Back to search")
 
         lay = QVBoxLayout(self)
-        for w in (self.query_label, self.dest_label, self.banner, self.progress_bar,
+        for w in (self.query_label, self.dest_label, self.panel_found_label, self.banner,
+                  self.progress_bar,
                   self.counters_label, self.budget_label):
             lay.addWidget(w)
         lay.addWidget(self.log_view, 1)
@@ -95,8 +99,15 @@ class RunPanel(QWidget):
         self.refresh_budget()
 
     # -- public ----------------------------------------------------------------
-    def begin(self, job_config) -> None:
+    def begin(self, job_config, found_total=None) -> None:
         self.job_config = job_config
+        if found_total is None:
+            self.panel_found_label.setText("")
+            self.panel_found_label.hide()
+        else:
+            posts = "1 post" if found_total == 1 else f"{found_total:,} posts"
+            self.panel_found_label.setText(f"Found {posts}")
+            self.panel_found_label.show()
         self._count = job_config.count
         self._done = False
         self.query_label.setText(f"Search: {query_text(job_config)}")

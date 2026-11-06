@@ -67,6 +67,7 @@ class PanelCase(GuiCase):
     def fill(self, tags="cat", count=None):
         self.form.include_edit.setText(tags)
         self.form.folder_edit.setText(str(self.tmp / "out"))
+        self.form.mark_found(321)
         if count:
             self.form.count_number_radio.setChecked(True)
             self.form.count_spin.setValue(count)
@@ -582,6 +583,7 @@ class FlowTests(PanelCase):
         self.creds()
         w.search_form.include_edit.setText("cat")
         w.search_form.folder_edit.setText(str(self.tmp / "out"))
+        w.search_form.mark_found(321)
         w.search_form.start_button.click()
         self.assertEqual(seen["query"], "Search: cat")
         self.assertTrue(seen["timer"])

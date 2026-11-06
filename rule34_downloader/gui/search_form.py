@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 from .. import form_model as fm
 from ..form_model import FormValues
 from .folder_dialog import choose_folder
+from .runner import SearchResult
 
 
 def _name(widget, name):
@@ -23,12 +24,18 @@ def _name(widget, name):
 class SearchForm(QWidget):
     values_changed = Signal()
     start_requested = Signal(object)
+    search_requested = Signal(str)
 
     def __init__(self, parent=None, values=None):
         super().__init__(parent)
         self.setObjectName("search_form")
         self._action_error = ""
         self._quiet = False  # True while the form changes controls itself
+        self._state = "idle"   # idle, searching, fresh, stale or error
+        self._pending_key = ""
+        self._found_key = ""
+        self._total = None
+        self._error_text = ""
         self._build()
         init = values if values is not None else FormValues(folder=fm.default_folder())
         self._apply(init)
@@ -75,9 +82,14 @@ class SearchForm(QWidget):
             lab.setWordWrap(True)
         self.error_label = _name(QLabel(), "error_label")
         self.error_label.setWordWrap(True)
-        self.start_button = _name(QPushButton("Start"), "start_button")
+        self.found_label = _name(QLabel(), "found_label")
+        self.found_label.setWordWrap(True)
+        self.found_label.setProperty("state", "idle")
+        self.search_button = _name(QPushButton("Search"), "search_button")
+        self.start_button = _name(QPushButton("Download"), "start_button")
 
         root = QVBoxLayout(self)
+        root.setSpacing(4)
 
         tags = QGroupBox("Tags")
         tl = QVBoxLayout(tags)
@@ -122,9 +134,11 @@ class SearchForm(QWidget):
 
         root.addWidget(self.query_preview)
         root.addWidget(self.dest_preview)
+        root.addWidget(self.found_label)
         root.addWidget(self.error_label)
         bottom = QHBoxLayout()
         bottom.addStretch(1)
+        bottom.addWidget(self.search_button)
         bottom.addWidget(self.start_button)
         root.addLayout(bottom)
         root.addStretch(1)
@@ -145,6 +159,8 @@ class SearchForm(QWidget):
         self.browse_button.clicked.connect(lambda _c=False: self.browse())
         self.new_folder_button.clicked.connect(lambda _c=False: self.new_folder())
         self.start_button.clicked.connect(lambda _c=False: self.request_start())
+        self.search_button.clicked.connect(lambda _c=False: self.begin_search())
+        self.include_edit.returnPressed.connect(self.begin_search)
 
     # ---- values ---------------------------------------------------------
     def values(self) -> FormValues:
@@ -217,11 +233,87 @@ class SearchForm(QWidget):
             shown = ""
         self.error_label.setText(shown)
         self.error_label.setVisible(bool(shown))
-        self.start_button.setEnabled(not errors)
+        key = fm.count_query(v)
+        if self._state == "fresh" and key != self._found_key:
+            self._state = "stale"
+            self._total = None
+        elif self._state == "error" and key != self._found_key:
+            self._state = "idle"
+        self._show_found(v)
+        self.search_button.setEnabled(bool(key) and self._state != "searching")
+        self.start_button.setEnabled(self._can_download(v))
+
+    def _can_download(self, v) -> bool:
+        return (not fm.validate(v) and self._state == "fresh"
+                and self._total is not None and self._total > 0)
+
+    def _show_found(self, v) -> None:
+        if self._state == "searching":
+            text = fm.SEARCHING_TEXT
+        elif self._state == "fresh":
+            text = fm.found_message(v, self._total or 0)
+        elif self._state == "stale":
+            text = fm.STALE_TEXT
+        elif self._state == "error":
+            text = self._error_text
+        else:
+            text = fm.IDLE_TEXT
+        self.found_label.setText(text)
+        if self.found_label.property("state") != self._state:
+            self.found_label.setProperty("state", self._state)
+            style = self.found_label.style()
+            style.unpolish(self.found_label)
+            style.polish(self.found_label)
+
+    # ---- search ---------------------------------------------------------
+    def begin_search(self) -> bool:
+        key = fm.count_query(self.values())
+        if not key or self._state == "searching":
+            return False
+        self._state = "searching"
+        self._pending_key = key
+        self._total = None
+        self._found_key = ""
+        self._refresh()
+        self.search_requested.emit(key)
+        return True
+
+    def set_search_result(self, result: SearchResult) -> None:
+        if self._state != "searching":
+            return
+        key = fm.count_query(self.values())
+        if key != self._pending_key:
+            self._state = "stale"
+            self._total = None
+        elif result.ok:
+            self._total = int(result.total or 0)
+            self._found_key = key
+            self._state = "fresh"
+        else:
+            self._error_text = fm.search_error_text(result.kind, result.wait_seconds)
+            self._found_key = key
+            self._state = "error"
+        self._refresh()
+
+    def set_search_error(self, kind: str) -> None:
+        self._error_text = fm.search_error_text(kind)
+        self._found_key = fm.count_query(self.values())
+        self._total = None
+        self._state = "error"
+        self._refresh()
+
+    def mark_found(self, total: int) -> None:
+        self._total = int(total)
+        self._found_key = fm.count_query(self.values())
+        self._state = "fresh"
+        self._refresh()
+
+    def found_total(self):
+        return self._total if self._state == "fresh" else None
 
     def request_start(self) -> bool:
         v = self.values()
-        if fm.validate(v):
+        if not self._can_download(v):
             return False
         self.start_requested.emit(fm.to_job_config(v))
         return True

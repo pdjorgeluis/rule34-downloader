@@ -32,6 +32,7 @@ class FormCase(GuiCase):
     def fill(self, tags="cat", folder=None):
         self.f.include_edit.setText(tags)
         self.f.folder_edit.setText(folder or str(self.tmp / "out"))
+        self.f.mark_found(321)
 
 
 @unittest.skipUnless(HAVE_QT, "PySide6 not installed")
@@ -71,7 +72,7 @@ class FormTests(FormCase):
         self.assertEqual(f.folder_edit.text(), form_model.default_folder())
         self.assertEqual(f.browse_button.text(), "Browse...")
         self.assertEqual(f.new_folder_button.text(), "New folder...")
-        self.assertEqual(f.start_button.text(), "Start")
+        self.assertEqual(f.start_button.text(), "Download")
 
     def test_include_text_updates_query_preview_at_once(self):
         self.window()
@@ -111,6 +112,7 @@ class FormTests(FormCase):
         self.assertEqual(self.f.error_label.text(), "tag in both include and exclude: cat")
         self.assertFalse(self.f.start_button.isEnabled())
         self.f.exclude_edit.setText("dog")
+        self.f.mark_found(321)
         self.assertTrue(self.f.error_label.isHidden())
         self.assertTrue(self.f.start_button.isEnabled())
 
@@ -122,6 +124,7 @@ class FormTests(FormCase):
         self.assertFalse(self.f.start_button.isEnabled())
         self.assertTrue(self.f.error_label.isHidden())
         self.f.include_edit.setText("cat")
+        self.f.mark_found(321)
         self.assertTrue(self.f.start_button.isEnabled())
 
     def test_start_click_emits_job_config(self):
@@ -367,6 +370,7 @@ class FormTests(FormCase):
         self.f.min_score_check.setChecked(True)
         self.assertTrue(self.f.min_score_spin.isEnabled())
         self.assertEqual(self.f.query_preview.text(), "Search: cat score:>=0")
+        self.f.mark_found(321)
         self.assertTrue(self.f.start_button.isEnabled())
         self.f.set_values(form_model.FormValues(include_text="cat", folder=str(self.tmp),
                                                 min_score=None))

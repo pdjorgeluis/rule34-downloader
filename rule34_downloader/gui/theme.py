@@ -45,6 +45,12 @@ QProgressBar {{ background: {WHITE}; border: 1px solid {BUTTON_BORDER}; color: {
 QProgressBar::chunk {{ background: {TEAL_NEON}; }}
 QTextBrowser {{ background: {WHITE}; color: {TEXT}; border: 1px solid {BUTTON_BORDER}; }}
 QLabel#banner {{ background: {WHITE}; border: 1px solid {BUTTON_BORDER}; padding: 4px; color: {TEXT}; }}
+QLabel#found_label {{ font-weight: bold; }}
+QLabel#found_label[state="idle"], QLabel#found_label[state="stale"], QLabel#found_label[state="searching"] {{
+    font-weight: normal; color: {DISABLED_TEXT};
+}}
+QLabel#found_label[state="error"] {{ color: {ERROR_RED}; }}
+QLabel#panel_found_label {{ font-weight: bold; }}
 QLabel#result_label {{ color: {TEXT}; font-weight: bold; }}
 QLabel#result_label[error="true"] {{ color: {ERROR_RED}; }}
 """

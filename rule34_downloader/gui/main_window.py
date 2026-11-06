@@ -13,7 +13,8 @@ from PySide6.QtWidgets import (
 from .. import config, form_model
 from .help_tab import HelpTab
 from .run_panel import RunPanel
-from .runner import JobRunner
+from ..budget import RequestBudget
+from .runner import JobRunner, SearchRunner
 from .search_form import SearchForm
 from .settings_dialog import SettingsDialog
 
@@ -28,9 +29,12 @@ def logo_icon() -> QIcon:
 
 class MainWindow(QMainWindow):
     def __init__(self, config_file=None, prefs_file=None, job_factory=None,
-                 budget_factory=None):
+                 budget_factory=None, search_factory=None):
         super().__init__()
         self.job_factory = job_factory
+        self.budget_factory = budget_factory
+        self.search_factory = search_factory
+        self._search_token = None
         self.config_file = Path(config_file) if config_file is not None else None
         if prefs_file is not None:
             self.prefs_file = Path(prefs_file)
@@ -72,6 +76,9 @@ class MainWindow(QMainWindow):
         self.tabs.setObjectName("tabs")
         self.search_form = SearchForm(values=form_model.load_prefs(self.prefs_file))
         self.search_form.start_requested.connect(self._on_start_requested)
+        self.search_form.search_requested.connect(self._on_search_requested)
+        self.searcher = SearchRunner(self)
+        self.searcher.finished.connect(self._on_search_finished)
         self.runner = JobRunner(self)
         self.run_panel = RunPanel(self.runner, budget_factory)
         self.download_stack = QStackedWidget()
@@ -98,6 +105,29 @@ class MainWindow(QMainWindow):
         lay.addWidget(form)
         return page
 
+    def _new_budget(self):
+        if self.budget_factory is not None:
+            return self.budget_factory()
+        return RequestBudget(limit=55)
+
+    def _on_search_requested(self, query: str) -> None:
+        try:
+            creds = config.load_credentials(path=self.config_file)
+        except config.MissingCredentials:
+            self.search_form.set_search_error("no_account")
+            self.statusBar().showMessage(NO_ACCOUNT)
+            return
+        token = self.searcher.start(query, creds, self.search_factory, self._new_budget())
+        del creds
+        if token is not None:
+            self._search_token = token
+
+    def _on_search_finished(self, token, result) -> None:
+        if token != self._search_token:
+            return
+        self.search_form.set_search_result(result)
+        self.run_panel.refresh_budget()
+
     def _on_start_requested(self, job_config) -> None:
         try:
             form_model.save_prefs(self.search_form.values(), self.prefs_file)
@@ -110,7 +140,7 @@ class MainWindow(QMainWindow):
             return
         if self.runner.is_running():
             return
-        self.run_panel.begin(job_config)
+        self.run_panel.begin(job_config, found_total=self.search_form.found_total())
         self.runner.start(job_config, creds, self.job_factory)
         del creds
         self.download_stack.setCurrentIndex(1)
@@ -123,6 +153,9 @@ class MainWindow(QMainWindow):
         self.settings_button.setEnabled(True)
 
     def closeEvent(self, event) -> None:
+        if self.searcher.is_running():
+            self.searcher.cancel()
+            self.searcher.wait(3000)
         if self.runner.is_running():
             answer = QMessageBox.question(
                 self, "Download running", "A download is running. Stop it and quit?",
