@@ -5,13 +5,14 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QFileDialog, QGroupBox, QHBoxLayout,
+    QButtonGroup, QCheckBox, QComboBox, QGroupBox, QHBoxLayout,
     QInputDialog, QLabel, QLineEdit, QPushButton, QRadioButton, QSpinBox, QVBoxLayout,
     QWidget,
 )
 
 from .. import form_model as fm
 from ..form_model import FormValues
+from .folder_dialog import choose_folder
 
 
 def _name(widget, name):
@@ -252,10 +253,7 @@ class SearchForm(QWidget):
         return str(Path.home())
 
     def browse(self) -> None:
-        # Avoid the native dialog: the GTK chooser can open larger than the screen and hide its confirm button.
-        chosen = QFileDialog.getExistingDirectory(
-            self, "Choose a folder", self._start_dir(),
-            QFileDialog.Option.ShowDirsOnly | QFileDialog.Option.DontUseNativeDialog)
+        chosen = choose_folder(self, self._start_dir())
         if chosen:
             self._set_folder_from_action(chosen)
 

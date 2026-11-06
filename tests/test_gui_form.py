@@ -161,33 +161,28 @@ class FormTests(FormCase):
     def test_browse_sets_folder(self):
         self.window()
         target = self.tmp / "picked"
-        with mock.patch("rule34_downloader.gui.search_form.QFileDialog") as dlg:
-            dlg.getExistingDirectory.return_value = str(target)
+        with mock.patch("rule34_downloader.gui.search_form.choose_folder",
+                        return_value=str(target)) as choose:
             self.f.browse_button.click()
         self.assertEqual(self.f.folder_edit.text(), str(target))
-        args = dlg.getExistingDirectory.call_args[0]
-        self.assertEqual(args[1], "Choose a folder")
-        self.assertEqual(args[2], str(self.tmp))  # default folder does not exist: nearest ancestor
+        choose.assert_called_once_with(self.f, str(self.tmp))  # default folder does not exist: nearest ancestor
 
     def test_browse_cancel_keeps_folder(self):
         self.window()
         self.fill(folder=str(self.tmp))
-        with mock.patch("rule34_downloader.gui.search_form.QFileDialog") as dlg:
-            dlg.getExistingDirectory.return_value = ""
+        with mock.patch("rule34_downloader.gui.search_form.choose_folder", return_value=""):
             self.f.browse_button.click()
         self.assertEqual(self.f.folder_edit.text(), str(self.tmp))
 
-    def test_browse_requests_qt_dialog_not_native(self):
-        from PySide6.QtWidgets import QFileDialog as RealDialog
-        dont, only = RealDialog.Option.DontUseNativeDialog, RealDialog.Option.ShowDirsOnly
+    def test_browse_delegates_to_choose_folder(self):
         self.window()
-        with mock.patch("rule34_downloader.gui.search_form.QFileDialog") as dlg:
-            dlg.getExistingDirectory.return_value = ""
+        with mock.patch("rule34_downloader.gui.search_form.choose_folder",
+                        return_value="") as choose:
             self.f.browse_button.click()
-        args = dlg.getExistingDirectory.call_args[0]
-        self.assertEqual(len(args), 4)
-        self.assertTrue(args[3] & dont)
-        self.assertTrue(args[3] & only)
+        choose.assert_called_once()
+        args = choose.call_args[0]
+        self.assertIs(args[0], self.f)
+        self.assertIsInstance(args[1], str)
 
     def _probe_real_dialog(self):
         """Click Browse unpatched; a timer inspects the dialog, records, rejects it."""
@@ -217,7 +212,14 @@ class FormTests(FormCase):
                         w.reject()
 
         QTimer.singleShot(0, poll)
-        self.f.browse_button.click()
+        with mock.patch("rule34_downloader.gui.folder_dialog.list_mounts", return_value=[]), \
+                mock.patch("rule34_downloader.gui.folder_dialog.find_gio",
+                           return_value="/nonexistent/gio"), \
+                mock.patch("rule34_downloader.network_mounts.subprocess.run",
+                           side_effect=AssertionError("real gio must not run in tests")), \
+                mock.patch("rule34_downloader.network_mounts.os.execvpe",
+                           side_effect=AssertionError("real gio must not run in tests")):
+            self.f.browse_button.click()
         if errors:
             raise errors[0]
         self.assertTrue(rec, "dialog never appeared")
@@ -226,7 +228,8 @@ class FormTests(FormCase):
 
     def test_browse_real_dialog_has_choose_and_cancel_buttons(self):
         rec = self._probe_real_dialog()
-        self.assertEqual(sorted(rec["texts"]), ["Cancel", "Choose"])
+        self.assertEqual(sorted(rec["texts"]),
+                         ["Cancel", "Choose", "Connect to server\u2026"])
 
     def test_browse_real_dialog_fits_a_small_screen(self):
         w, h = self._probe_real_dialog()["size"]
