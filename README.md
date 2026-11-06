@@ -12,3 +12,9 @@ Options: `--exclude TEXT`, `--min-score N`, `-n/--count N` (default 20) or `--al
 
 Files land in `<output>/<search>/<pictures|gifs|videos>/<id>.<ext>`; complete files are skipped on re-runs. Exit codes: 0 ok, 2 usage, 4 no credentials, 5 API error, 6 other error. `--dry-run` prints the query, types and destination without touching the network, credentials or disk.
 
+
+## Error layer building blocks (not yet wired into the engine)
+
+- `errors.py`: `ApiError` > `TemporaryError` (kinds `http`, `timeout`, `connection`, `search_down`, `malformed`; may carry `retry_after`) / `PermanentError` (kinds `auth`, `captcha`, `client`); `ServerUnavailable` for the give-up case. `check_reply(status, body, headers, api_key)` raises the right class (empty body, `[]`, XML are never errors); `classify_exception` maps timeouts/connection failures. All messages are redacted, then cut to 200 characters.
+- `backoff.py`: `Backoff` (5, 10, 20, 40 ... capped at 300 s, 20% jitter; a `Retry-After` value wins) and `GiveUpClock` (30-minute window).
+- `budget.py`: `RequestBudget` keeps a rolling 55-per-hour count of API requests in `state.json` (`R34_STATE`, else `~/.local/state/rule34-downloader/`), waiting when full.

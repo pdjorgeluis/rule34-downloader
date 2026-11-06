@@ -9,6 +9,7 @@ import threading
 import requests
 
 from .config import Credentials, redact
+from .errors import ApiError  # noqa: F401  (re-exported)
 
 DEFAULT_API_URL = "https://api.rule34.xxx/index.php"
 USER_AGENT = "Rule34Downloader/0.1 (personal archiver)"
@@ -18,10 +19,6 @@ TIMEOUT = (10, 60)
 def api_url() -> str:
     """Read at call time so tests and users can override with R34_API_URL."""
     return os.environ.get("R34_API_URL") or DEFAULT_API_URL
-
-
-class ApiError(Exception):
-    pass
 
 
 class ApiClient:
