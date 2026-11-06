@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Rule34 Downloader
+Comment=Download images from rule34.xxx by tag
+Exec=@EXEC@
+Icon=rule34-downloader
+Terminal=false
+Categories=Network;FileTransfer;
+StartupWMClass=rule34-downloader
