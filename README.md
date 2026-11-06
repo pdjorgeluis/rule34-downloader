@@ -20,16 +20,16 @@ tar -xzf rule34-downloader-1.0.0-linux-x86_64.tar.gz
 
 The tarball is about 82 MB. The unpacked folder is about 210 MB.
 
-To install it for your user, run the install script from the project folder. Give it the unpacked folder:
+To install it for your user, run the installer that is inside the tarball. Run this from the folder where you unpacked it, with no argument:
 
 ```
-bash packaging/linux/install.sh rule34-downloader
+bash rule34-downloader/install/install.sh
 ```
 
 This writes under `$PREFIX`, which is `~/.local` by default. It adds a launcher link, a desktop entry and 8 icons. To remove exactly those files again:
 
 ```
-bash packaging/linux/uninstall.sh
+bash rule34-downloader/install/uninstall.sh
 ```
 
 Neither script touches your settings or your downloads.

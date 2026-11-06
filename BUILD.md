@@ -51,10 +51,23 @@ The script does this:
 
 1. Checks that PyInstaller is available in `.venv` (or in the Python named by `R34_PYTHON`).
 2. Builds the onedir app with `packaging/rule34-downloader.spec` into `build/dist/`.
-3. Smoke-tests the frozen binary with `--smoke`. It must print `smoke ok`.
-4. Packs `build/dist/rule34-downloader` into a tarball.
+3. Copies the installer files into `build/dist/rule34-downloader/install/`.
+4. Smoke-tests the frozen binary with `--smoke`. It must print `smoke ok`.
+5. Packs `build/dist/rule34-downloader` into a tarball.
+6. Checks the tarball: it unpacks it into a temp directory, runs the packed `install/install.sh` with no argument into a temp `PREFIX` and a temp `HOME`, runs the installed launcher with `--version`, runs the packed `install/uninstall.sh`, and requires that `PREFIX` holds no files.
+7. Prints `BUILD OK`.
 
-The last line is `BUILD OK build/rule34-downloader-1.0.0-linux-x86_64.tar.gz`. The tarball is about 82 MB. The unpacked folder is about 210 MB.
+The last three output lines are:
+
+```
+SMOKE OK (frozen binary)
+INSTALL CHECK OK
+BUILD OK build/rule34-downloader-<version>-linux-<arch>.tar.gz
+```
+
+For version 1.0.0 on x86_64 the tarball is `build/rule34-downloader-1.0.0-linux-x86_64.tar.gz`. It is about 82 MB. The unpacked folder is about 210 MB.
+
+Tarball contents: the top folder is `rule34-downloader/`, the PyInstaller app. Inside it, `install/install.sh` and `install/uninstall.sh` install and remove the app, `install/rule34-downloader.desktop` is the desktop entry template, and `install/icons/` holds the 8 PNG icons. Someone who has only the tarball can install it with no source tree.
 
 ## Install and uninstall on Linux
 

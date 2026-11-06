@@ -14,22 +14,33 @@ if ($env:R34_PYTHON) {
     $Py = Join-Path $Root '.venv\Scripts\python.exe'
 }
 
+# Native commands write progress to stderr. Under 'Stop', Windows PowerShell 5.1
+# turns that into NativeCommandError, so each native call runs under 'Continue'
+# and is judged only by its exit code.
 $HavePyInstaller = $false
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+$LASTEXITCODE = 0
 try {
-    $LASTEXITCODE = 0
-    & $Py -m PyInstaller --version | Out-Null
-    $HavePyInstaller = ($LASTEXITCODE -eq 0)
+    & $Py -m PyInstaller --version 2>&1 | Out-Null
+    $PyiExit = $LASTEXITCODE
 } catch {
-    $HavePyInstaller = $false
+    $PyiExit = 1
 }
+$ErrorActionPreference = $prevEAP
+$HavePyInstaller = ($PyiExit -eq 0)
 if (-not $HavePyInstaller) {
     [Console]::Error.WriteLine("error: PyInstaller is not available in $Py")
     exit 1
 }
 
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 $LASTEXITCODE = 0
 & $Py -m PyInstaller --noconfirm --clean --distpath build\dist --workpath build\work packaging\rule34-downloader.spec
-if ($LASTEXITCODE -ne 0) {
+$BuildExit = $LASTEXITCODE
+$ErrorActionPreference = $prevEAP
+if ($BuildExit -ne 0) {
     [Console]::Error.WriteLine('error: PyInstaller build failed')
     exit 1
 }
@@ -54,9 +65,15 @@ if ((Get-Item $Smoke).Length -le 0) {
 }
 Write-Host 'SMOKE OK (frozen exe)'
 
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 $LASTEXITCODE = 0
-$Version = (& $Py -c "from rule34_downloader.version import __version__ as v; print(v)").Trim()
-if ($LASTEXITCODE -ne 0 -or -not $Version) {
+$VersionOut = & $Py -c "from rule34_downloader.version import __version__ as v; print(v)" 2>$null
+$VersionExit = $LASTEXITCODE
+$ErrorActionPreference = $prevEAP
+$Version = ''
+if ($VersionOut) { $Version = (($VersionOut | Out-String)).Trim() }
+if ($VersionExit -ne 0 -or -not $Version) {
     [Console]::Error.WriteLine('error: cannot read the version')
     exit 1
 }

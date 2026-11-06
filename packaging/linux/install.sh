@@ -8,12 +8,21 @@ usage() {
 }
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ICON_SRC="$HERE/../icons"
+if [ -d "$HERE/icons" ]; then
+    ICON_SRC="$HERE/icons"
+else
+    ICON_SRC="$HERE/../icons"
+fi
 SIZES=(16 24 32 48 64 128 256 512)
 NAME="rule34-downloader"
 
-[ $# -ge 1 ] || usage
-built="$1"
+if [ $# -ge 1 ]; then
+    built="$1"
+elif [ -f "$HERE/../$NAME" ] && [ -x "$HERE/../$NAME" ]; then
+    built="$(cd "$HERE/.." && pwd)"
+else
+    usage
+fi
 [ -f "$built/$NAME" ] && [ -x "$built/$NAME" ] || usage
 
 PREFIX="${PREFIX-$HOME/.local}"
