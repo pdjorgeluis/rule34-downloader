@@ -1,12 +1,16 @@
+import os
+import sys
 import threading
 import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from rule34_downloader.backoff import Backoff, GiveUpClock
 from rule34_downloader.errors import PermanentError, ServerUnavailable, TemporaryError
 from rule34_downloader.resilience import (
     Adaptive, ResilientClient, Stopped, ThrottleGate, check_file_reply,
 )
-from tests.fakes import FakeClock, fake_waiter
+from fakes import FakeClock, fake_waiter  # noqa: E402
 
 
 class GateTest(unittest.TestCase):
@@ -240,6 +244,16 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(retry[0]["what"], "page")
         self.assertEqual(retry[0]["pid"], 3)
         self.assertIn("adaptive", self.kinds())
+
+    def test_adaptive_event_payload_has_single_worker_and_delay_factor(self):
+        c = self.make([TemporaryError("a", status=503), TemporaryError("b", status=503), []])
+        c.fetch_posts("cat", 100, 0)
+        adaptive = [d for k, d in self.events if k == "adaptive"]
+        self.assertEqual(adaptive, [
+            {"level": 1, "single_worker": True, "delay_factor": 2.0},
+            {"level": 2, "single_worker": True, "delay_factor": 4.0},
+        ])
+        self.assertEqual(list(adaptive[0]), ["level", "single_worker", "delay_factor"])
 
     def test_retry_after_used_exactly_for_wait(self):
         c = self.make([TemporaryError("slow", status=429, retry_after=7.0), [{"id": 1}]])

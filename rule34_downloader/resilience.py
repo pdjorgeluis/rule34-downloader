@@ -182,8 +182,8 @@ class ResilientClient:
                 if self.adaptive.overload():
                     self._emit_safe("adaptive", {
                         "level": self.adaptive.level,
-                        "workers_factor": self.adaptive.effective_workers(1000) / 1000,
-                        "delay_factor": self.adaptive.effective_delay(1.0),
+                        "single_worker": self.adaptive.level >= 1,
+                        "delay_factor": 2.0 ** self.adaptive.level,
                     })
                 reason = "retry-after" if e.retry_after is not None else "backoff"
                 self.gate.trip(delay, reason)
