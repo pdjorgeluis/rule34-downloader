@@ -64,9 +64,17 @@ def _header(headers, name: str):
     return None
 
 
+_BOM = b"\xef\xbb\xbf"
+
+
+def strip_bom(body: bytes) -> bytes:
+    """Remove exactly one leading UTF-8 BOM and nothing else."""
+    return body[len(_BOM):] if body.startswith(_BOM) else body
+
+
 def check_reply(status: int, body: bytes, headers: Optional[Mapping] = None,
                 api_key: Optional[str] = None) -> None:
-    text = (body or b"").decode("utf-8", errors="replace")
+    text = strip_bom(body or b"").decode("utf-8", errors="replace")
     low = text.lower()
     if status == 429:
         raise TemporaryError(_msg(f"HTTP 429: {text}", api_key), status,

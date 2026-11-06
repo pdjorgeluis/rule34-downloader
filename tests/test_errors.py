@@ -131,6 +131,18 @@ class ErrorsTest(unittest.TestCase):
                     TemporaryError("t"), ValueError("v"), KeyError("k")):
             self.assertIsNone(classify_exception(exc), exc)
 
+    def test_check_reply_ignores_leading_bom(self):
+        self.assertIsNone(check_reply(200, b"\xef\xbb\xbf"))
+        self.assertIsNone(check_reply(200, b"\xef\xbb\xbf[]"))
+        self.assertIsNone(check_reply(200, b"\xef\xbb\xbf<posts count=\"0\"/>"))
+
+    def test_strip_bom_removes_one_leading_bom_only(self):
+        from rule34_downloader.errors import strip_bom
+        self.assertEqual(strip_bom(b"\xef\xbb\xbf[]"), b"[]")
+        self.assertEqual(strip_bom(b"\xef\xbb\xbf\xef\xbb\xbf[]"), b"\xef\xbb\xbf[]")
+        self.assertEqual(strip_bom(b"[]\xef\xbb\xbf"), b"[]\xef\xbb\xbf")
+        self.assertEqual(strip_bom(b""), b"")
+
 
 if __name__ == "__main__":
     unittest.main()
