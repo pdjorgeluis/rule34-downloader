@@ -13,7 +13,12 @@ from mock_api import API_KEY, USER_ID, MockServer  # noqa: E402
 from rule34_downloader.cli import main  # noqa: E402
 
 
+_STATE_DIR = tempfile.TemporaryDirectory()   # never the real state file
+_STATE = str(Path(_STATE_DIR.name) / "state.json")
+
+
 def run_cli(argv, env):
+    env = {"R34_STATE": _STATE, **env}
     out, err = io.StringIO(), io.StringIO()
     with mock.patch.dict(os.environ, env), \
             contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
@@ -34,6 +39,8 @@ class CliTests(unittest.TestCase):
         srv = MockServer(total=total).start()
         self.addCleanup(srv.stop)
         self.env = {
+            "R34_STATE": str(self.tmp / "state.json"),
+            "R34_BACKOFF_BASE": "0.001",   # file 500s are retried now
             "R34_API_URL": srv.api_url,
             "R34_USER_ID": USER_ID,
             "R34_API_KEY": API_KEY,
@@ -62,7 +69,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(
             done,
             ["Done: downloaded=3 existing=0 skipped_type=2 failed=0 pages=1 requests=1 "
-             "reason=count_reached"],
+             "retries=0 reason=count_reached"],
         )
         self.assertEqual(len(list((out_dir / "cat" / "pictures").iterdir())), 3)
         self.assertEqual(len(srv.api_requests()), 1)
@@ -98,8 +105,10 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertNotIn(API_KEY, out + err)
         srv.mode = "http500"
-        rc, out, err = run_cli(["cat", "-n", "2", "-o", str(self.tmp / "o2")], self.env)
-        self.assertEqual(rc, 5)
+        env = dict(self.env, R34_BACKOFF_BASE="0.001")
+        rc, out, err = run_cli(["cat", "-n", "2", "--give-up-minutes", "0.0005",
+                                "-o", str(self.tmp / "o2")], env)
+        self.assertEqual(rc, 7)
         self.assertNotIn(API_KEY, out + err)
 
     def test_cli_unexpected_error_exit_6(self):

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import math
+import os
 import sys
 from pathlib import Path
 
@@ -33,6 +35,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--page-size", type=int, default=100)
     p.add_argument("--safety-exclude", action="store_true")
     p.add_argument("--delay", type=float, default=0.5)
+    p.add_argument("--api-per-hour", type=int, default=55,
+                   help="API request budget per hour (default 55)")
+    p.add_argument("--give-up-minutes", type=float, default=30.0,
+                   help="give up on an unavailable server after this long (default 30)")
     p.add_argument("--dry-run", action="store_true")
     return p
 
@@ -68,6 +74,10 @@ def main(argv=None) -> int:
             delay=args.delay,
         )
         query = build_query(cfg.include, cfg.exclude, cfg.min_score, cfg.order, cfg.safety)
+        if args.api_per_hour < 1:
+            raise ValueError("--api-per-hour must be >= 1")
+        if not (math.isfinite(args.give_up_minutes) and args.give_up_minutes > 0):
+            raise ValueError("--give-up-minutes must be > 0")
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -84,7 +94,19 @@ def main(argv=None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 4
 
-    from .api import ApiClient, ApiError
+    raw_base = os.environ.get("R34_BACKOFF_BASE", "5")
+    try:
+        base = float(raw_base)
+        if not (math.isfinite(base) and base > 0):
+            raise ValueError
+    except ValueError:
+        print(f"error: R34_BACKOFF_BASE must be a number > 0 (got {raw_base!r})",
+              file=sys.stderr)
+        return 2
+
+    from .api import ApiClient
+    from .backoff import Backoff, GiveUpClock
+    from .budget import RequestBudget
     from .engine import Job
 
     def on_event(kind, data):
@@ -92,14 +114,31 @@ def main(argv=None) -> int:
             print(f"{data['type']}: {data['id']} ({data['bytes']} bytes)", flush=True)
         elif kind == "file_failed":
             print(f"failed: {data['id']}: {data['error']}", flush=True)
+        elif kind == "waiting":
+            print(f"waiting: {data['reason']} {data['seconds']:.0f}s "
+                  f"(attempt {data['attempt']})", flush=True)
+        elif kind == "retry":
+            ident = data["pid"] if data["what"] == "page" else data["id"]
+            print(f"retry: {data['what']} {ident} attempt {data['attempt']}: "
+                  f"{data['error']}", flush=True)
+        elif kind == "adaptive":
+            print(f"slowing down: level {data['level']}", flush=True)
+        elif kind == "server_unavailable":
+            print(f"server unavailable: {data['message']}", flush=True)
+        elif kind == "permanent_error":
+            print(f"permanent error ({data['kind']}): {data['message']}", flush=True)
 
+    job = None
     try:
         cfg.dest.mkdir(parents=True, exist_ok=True)
-        s = Job(cfg, ApiClient(creds), on_event=on_event).run()
-    except ApiError as exc:
-        print(f"error: {redact(str(exc), creds.api_key)}", file=sys.stderr)
-        return 5
+        job = Job(cfg, ApiClient(creds), on_event=on_event,
+                  budget=RequestBudget(limit=args.api_per_hour),
+                  giveup=GiveUpClock(window=args.give_up_minutes * 60),
+                  backoff=Backoff(base=base), retries=True)
+        s = job.run()
     except KeyboardInterrupt:
+        if job is not None:
+            job.stop()
         print("interrupted", file=sys.stderr)
         return 130
     except Exception as exc:
@@ -107,9 +146,22 @@ def main(argv=None) -> int:
         return 6
     print(
         f"Done: downloaded={s.downloaded} existing={s.existing} skipped_type={s.skipped_type} "
-        f"failed={s.failed} pages={s.pages} requests={s.requests_made} reason={s.reason}"
+        f"failed={s.failed} pages={s.pages} requests={s.requests_made} "
+        f"retries={s.retries} reason={s.reason}",
+        flush=True,
     )
-    return 0
+    if s.reason in ("count_reached", "end_of_results"):
+        return 0
+    if s.reason == "permanent_error":
+        print(f"error: {s.error_kind}: {redact(s.error or '', creds.api_key)}", file=sys.stderr)
+        return 5
+    if s.reason == "server_unavailable":
+        print("error: server unavailable; re-run the same command later to resume",
+              file=sys.stderr)
+        return 7
+    if s.reason == "stopped":
+        return 130
+    return 6
 
 
 if __name__ == "__main__":

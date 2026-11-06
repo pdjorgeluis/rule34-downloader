@@ -294,11 +294,6 @@ class EngineTests(EngineBase):
         self.assertIsNone(s.total)
         self.assertEqual([q for q in self.srv.api_requests() if "json" not in q], [])
 
-    def test_apierror_propagates_from_run(self):
-        self.srv.mode = "http500"
-        with self.assertRaises(ApiError):
-            self.make(count=1).run()
-
     def test_count_zero_or_negative_rejected(self):
         for c in (0, -3):
             with self.assertRaises(ValueError):

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -11,12 +12,20 @@ from typing import Callable, Optional
 import requests
 
 from .api import ApiClient, ApiError
+from .backoff import Backoff, GiveUpClock
+from .errors import PermanentError, TemporaryError, classify_exception
 from .files import classify, dest_path, ext_from_url, is_complete
 from .query import build_query
+from .resilience import (
+    Adaptive, ResilientClient, Stopped, ThrottleGate, check_file_reply,
+)
 
 KINDS = ("pictures", "gifs", "videos")
 CHUNK = 64 * 1024
 DOWNLOAD_TIMEOUT = (10, 60)
+FILE_ATTEMPTS = 3
+UNAVAILABLE_SLICE = 0.05   # seconds; the ruling allows at most 0.25
+POLICIES = ("stop", "pause")
 
 
 @dataclass
@@ -33,8 +42,16 @@ class JobConfig:
     page_size: int = 100
     safety: bool = False
     delay: float = 0.5
+    unavailable_policy: str = "stop"
+    auto_retry_seconds: Optional[float] = None
 
     def __post_init__(self):
+        if self.unavailable_policy not in POLICIES:
+            raise ValueError(f"unavailable_policy must be one of {POLICIES}")
+        a = self.auto_retry_seconds
+        if a is not None and (isinstance(a, bool) or not isinstance(a, (int, float))
+                              or not a > 0):
+            raise ValueError("auto_retry_seconds must be None or a number > 0")
         self.dest = Path(self.dest)
         self.types = set(self.types)
         if not self.types or not self.types <= set(KINDS):
@@ -58,13 +75,21 @@ class Summary:
     requests_made: int = 0
     reason: str = "end_of_results"
     total: Optional[int] = None
+    error: Optional[str] = None
+    error_kind: Optional[str] = None
+    retries: int = 0
+    waited_seconds: float = 0.0
 
 
 class Job:
     def __init__(self, config: JobConfig, client: ApiClient, session=None,
-                 on_event: Optional[Callable] = None):
+                 on_event: Optional[Callable] = None, *,
+                 gate: Optional[ThrottleGate] = None, adaptive: Optional[Adaptive] = None,
+                 budget=None, backoff: Optional[Backoff] = None,
+                 giveup: Optional[GiveUpClock] = None, retries: bool = False):
         self.config = config
         self.client = client
+        self._retries = bool(retries)
         self._session = session
         self._on_event = on_event
         self._query = build_query(config.include, config.exclude, config.min_score,
@@ -77,7 +102,21 @@ class Job:
         self._sessions = []
         self._in_flight = 0
         self._outstanding = 0
+        self._retry_evt = threading.Event()
+        self._finished = False
         self.summary = Summary()
+        self._rc = ResilientClient(
+            client, gate=gate, budget=budget, backoff=backoff, giveup=giveup,
+            adaptive=adaptive, stop=self._stop, emit=self._emit,
+            retries_enabled=self._retries)
+
+    @property
+    def gate(self) -> ThrottleGate:
+        return self._rc.gate
+
+    @property
+    def adaptive(self) -> Adaptive:
+        return self._rc.adaptive
 
     @property
     def query(self) -> str:
@@ -96,6 +135,11 @@ class Job:
         self._gate.set()
         self._emit("resumed", {})
 
+    def retry_now(self):
+        """Skip the current backoff / unavailable wait and try again at once."""
+        self._rc.gate.retry_now()
+        self._retry_evt.set()
+
     def stop(self):
         self._stop.set()
         self._gate.set()
@@ -104,6 +148,15 @@ class Job:
 
     # -- helpers -------------------------------------------------------------
     def _emit(self, kind, data):
+        if kind in ("retry", "waiting"):
+            with self._cond:
+                if kind == "retry":
+                    self.summary.retries += 1
+                else:
+                    self.summary.waited_seconds += float(data.get("seconds", 0.0))
+        elif kind == "adaptive":
+            with self._cond:
+                self._cond.notify_all()
         if self._on_event is None:
             return
         try:
@@ -133,36 +186,52 @@ class Job:
 
     # -- run -----------------------------------------------------------------
     def run(self) -> Summary:
-        cfg, s = self.config, self.summary
+        s = self.summary
         base_requests = self.client.requests_made
-        executor = ThreadPoolExecutor(max_workers=cfg.workers)
+        executor = ThreadPoolExecutor(max_workers=self.config.workers)
         try:
-            if self._stop.is_set():
-                self._emit("started", {"query": self._query, "total": None})
-                s.reason = "stopped"
-                return self._finish(base_requests)
-            if not self._wait_gate():
-                self._emit("started", {"query": self._query, "total": None})
-                s.reason = "stopped"
-                return self._finish(base_requests)
-            if cfg.count is None:
-                try:
-                    s.total = self.client.total_count(self._query)
-                except ApiError:
-                    s.total = None
-            self._emit("started", {"query": self._query, "total": s.total})
-            s.reason = self._page_loop(executor)
-        finally:
-            executor.shutdown(wait=True)
-            for sess in self._sessions:
-                try:
-                    sess.close()
-                except Exception:
-                    pass
+            s.reason = self._run_inner(executor)
+        except BaseException as exc:
+            self.stop()
+            s.reason = "error"
+            s.error = self._safe(exc)
+            s.error_kind = "unexpected"
+            self._cleanup(executor)
+            self._finish(base_requests)
+            raise
+        self._cleanup(executor)
         return self._finish(base_requests)
+
+    def _cleanup(self, executor):
+        executor.shutdown(wait=True)
+        for sess in self._sessions:
+            try:
+                sess.close()
+            except Exception:
+                pass
+
+    def _run_inner(self, executor) -> str:
+        cfg, s = self.config, self.summary
+        if self._stop.is_set() or not self._wait_gate():
+            self._emit("started", {"query": self._query, "total": None})
+            return "stopped"
+        if cfg.count is None:
+            try:
+                s.total = self._rc.total_count(self._query)
+            except Stopped:
+                self._emit("started", {"query": self._query, "total": None})
+                return "stopped"
+            except ApiError:
+                s.total = None
+        self._emit("started", {"query": self._query, "total": s.total})
+        return self._page_loop(executor)
 
     def _finish(self, base_requests):
         self.summary.requests_made = self.client.requests_made - base_requests
+        with self._cond:
+            if self._finished:
+                return self.summary
+            self._finished = True
         self._emit("finished", {"summary": self.summary})
         return self.summary
 
@@ -173,7 +242,32 @@ class Job:
         while True:
             if not self._wait_gate():
                 return "stopped"
-            posts = self.client.fetch_posts(self._query, cfg.page_size, pid)
+            try:
+                posts = self._rc.fetch_posts(self._query, cfg.page_size, pid)
+            except Stopped:
+                return "stopped"
+            except PermanentError as e:
+                s.error, s.error_kind = self._safe(e), e.kind
+                return "permanent_error"
+            except TemporaryError as e:
+                self._retry_evt.clear()
+                self._emit("server_unavailable", {
+                    "message": self._safe(e), "policy": cfg.unavailable_policy,
+                    "auto_retry_seconds": cfg.auto_retry_seconds})
+                if cfg.unavailable_policy == "stop":
+                    s.error, s.error_kind = self._safe(e), e.kind
+                    return "server_unavailable"
+                by = self._unavailable_wait()
+                if by is None:
+                    return "stopped"
+                self._rc.giveup.success()
+                self._rc.gate.retry_now()
+                self._emit("unavailable_retry", {"by": by})
+                continue
+            except ApiError as e:
+                s.error, s.error_kind = self._safe(e), "unknown"
+                self._emit("permanent_error", {"kind": "unknown", "message": self._safe(e)})
+                return "permanent_error"
             if not posts:
                 return "end_of_results"
             s.pages += 1
@@ -189,6 +283,21 @@ class Job:
                 if reason:
                     return reason
             pid += 1
+
+    def _unavailable_wait(self) -> Optional[str]:
+        """Block until retry_now / auto-retry (returns who) or stop (returns None)."""
+        auto = self.config.auto_retry_seconds
+        start = time.monotonic()
+        while True:
+            if self._stop.is_set():
+                return None
+            if self._retry_evt.is_set():
+                return "retry_now"
+            left = None if auto is None else auto - (time.monotonic() - start)
+            if left is not None and left <= 0:
+                return "auto_retry"
+            step = UNAVAILABLE_SLICE if left is None else min(UNAVAILABLE_SLICE, left)
+            self._retry_evt.wait(step)
 
     def _drain_reason(self, default: str) -> str:
         """Wait for in-flight work, then decide how the job ended."""
@@ -225,7 +334,7 @@ class Job:
                 s.existing += 1
             self._emit("file_existing", {"id": post.get("id")})
             return None
-        # reserve a slot
+        # reserve a slot (effective concurrency may shrink while we wait)
         with self._cond:
             while True:
                 if self._stop.is_set():
@@ -233,9 +342,9 @@ class Job:
                 if cfg.count is not None and s.downloaded >= cfg.count:
                     return "count_reached"
                 room = cfg.count is None or self._in_flight + s.downloaded < cfg.count
-                if room and self._outstanding < cfg.workers:
+                if room and self._outstanding < self._rc.adaptive.effective_workers(cfg.workers):
                     break
-                self._cond.wait()
+                self._cond.wait(0.5)
             self._in_flight += 1
             self._outstanding += 1
         fut = executor.submit(self._download_task, post.get("id"), url, kind, dest)
@@ -248,29 +357,68 @@ class Job:
             self._cond.notify_all()
 
     # -- worker --------------------------------------------------------------
+    def _release(self):
+        with self._cond:
+            self._in_flight -= 1
+            self._cond.notify_all()
+
+    def _file_error(self, exc: Exception) -> Exception:
+        if isinstance(exc, ApiError):
+            return exc
+        return classify_exception(exc, self.client.credentials.api_key) or exc
+
     def _download_task(self, post_id, url, kind, dest):
         s = self.summary
         if not self._wait_gate():
-            with self._cond:
-                self._in_flight -= 1
-                self._cond.notify_all()
+            self._release()
             return
-        try:
-            nbytes = self._download(url, dest)
-        except Exception as exc:
-            with self._cond:
-                s.failed += 1
-                self._in_flight -= 1
-                self._cond.notify_all()
-            self._emit("file_failed", {"id": post_id, "error": self._safe(exc)})
-            return
+        attempt = 1
+        while True:
+            if not self._rc.gate.wait(self._stop):
+                self._release()          # stopped while waiting: abandon, no counter
+                return
+            try:
+                nbytes = self._download(url, dest)
+                break
+            except Exception as exc:
+                err = self._file_error(exc)
+                if (self._retries and isinstance(err, TemporaryError)
+                        and attempt < FILE_ATTEMPTS):
+                    self._file_retry(post_id, err, attempt)
+                    attempt += 1
+                    continue
+                text = self._safe(err)
+                if self._retries and isinstance(err, TemporaryError):
+                    text = f"after {FILE_ATTEMPTS} attempts: {text}"
+                with self._cond:
+                    s.failed += 1
+                    self._in_flight -= 1
+                    self._cond.notify_all()
+                self._emit("file_failed", {"id": post_id, "error": text})
+                return
         with self._cond:
             s.downloaded += 1
             self._in_flight -= 1
             self._cond.notify_all()
         self._emit("file_done", {"id": post_id, "type": kind, "path": str(dest), "bytes": nbytes})
-        if self.config.delay > 0:
-            self._stop.wait(self.config.delay)
+        delay = self._rc.adaptive.effective_delay(self.config.delay)
+        if delay > 0:
+            self._stop.wait(delay)
+
+    def _file_retry(self, post_id, err: TemporaryError, attempt: int):
+        rc = self._rc
+        delay = float(rc.backoff.delay(attempt, err.retry_after))
+        if rc.adaptive.overload():
+            self._emit("adaptive", {
+                "level": rc.adaptive.level,
+                "single_worker": rc.adaptive.level >= 1,
+                "delay_factor": 2.0 ** rc.adaptive.level,
+            })
+        reason = "retry-after" if err.retry_after is not None else "backoff"
+        rc.gate.trip(delay, reason)
+        self._emit("retry", {"what": "file", "id": post_id, "attempt": attempt,
+                             "error": self._safe(err)})
+        self._emit("waiting", {"reason": reason, "seconds": delay, "attempt": attempt})
 
     def _download(self, url, dest: Path) -> int:
         part = dest.with_name(dest.name + ".part")
@@ -278,8 +426,7 @@ class Job:
         try:
             resp = self._get_session().get(url, stream=True, timeout=DOWNLOAD_TIMEOUT)
             try:
-                if resp.status_code != 200:
-                    raise RuntimeError(f"HTTP {resp.status_code}")
+                check_file_reply(resp.status_code, getattr(resp, "headers", None))
                 total = 0
                 with open(part, "wb") as fh:
                     for chunk in resp.iter_content(CHUNK):
