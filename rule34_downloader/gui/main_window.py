@@ -10,12 +10,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from .. import config
+from .. import config, form_model
+from .search_form import SearchForm
 from .settings_dialog import SettingsDialog
 
 LOGO_PATH = Path(__file__).parent / "assets" / "logo.svg"
 TITLE = "Rule34 Downloader"
 NO_ACCOUNT = "No account saved - open Settings to add your user ID and API key"
+READY = "Ready: the downloader engine is connected in the next release."
 
 
 def logo_icon() -> QIcon:
@@ -23,9 +25,15 @@ def logo_icon() -> QIcon:
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, config_file=None):
+    def __init__(self, config_file=None, prefs_file=None):
         super().__init__()
         self.config_file = Path(config_file) if config_file is not None else None
+        if prefs_file is not None:
+            self.prefs_file = Path(prefs_file)
+        elif self.config_file is not None:
+            self.prefs_file = self.config_file.with_name("ui.json")
+        else:
+            self.prefs_file = config.config_path().with_name("ui.json")
         self.setWindowTitle(TITLE)
         self.setWindowIcon(logo_icon())
         self.setMinimumSize(720, 520)
@@ -57,9 +65,9 @@ class MainWindow(QMainWindow):
 
         self.tabs = QTabWidget()
         self.tabs.setObjectName("tabs")
-        self.tabs.addTab(
-            self._page("download_tab", "Download: the search form arrives in the next release."),
-            "Download")
+        self.search_form = SearchForm(values=form_model.load_prefs(self.prefs_file))
+        self.search_form.start_requested.connect(self._on_start_requested)
+        self.tabs.addTab(self._download_page(self.search_form), "Download")
         self.tabs.addTab(
             self._page("help_tab", "Help: usage instructions arrive in a later release."),
             "Help")
@@ -68,6 +76,22 @@ class MainWindow(QMainWindow):
 
         self.setStatusBar(QStatusBar())
         self.refresh_status()
+
+    @staticmethod
+    def _download_page(form: QWidget) -> QWidget:
+        page = QWidget()
+        page.setObjectName("download_tab")
+        page.setAttribute(Qt.WA_StyledBackground, True)
+        lay = QVBoxLayout(page)
+        lay.addWidget(form)
+        return page
+
+    def _on_start_requested(self, _job_config) -> None:
+        try:
+            form_model.save_prefs(self.search_form.values(), self.prefs_file)
+        except Exception:
+            pass  # preferences are optional
+        self.statusBar().showMessage(READY)
 
     @staticmethod
     def _page(name: str, text: str) -> QWidget:

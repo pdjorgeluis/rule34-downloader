@@ -34,4 +34,11 @@ QLabel#header_title {{ color: {TEAL_NEON}; font-size: 22px; font-weight: bold; b
 QLabel#header_logo {{ background: transparent; }}
 QLabel#options_link {{ color: {LINK_BLUE}; }}
 QLabel#error_label {{ color: {ERROR_RED}; }}
+QGroupBox {{ color: {TEXT}; border: 1px solid {BUTTON_BORDER}; margin-top: 8px; padding-top: 8px; }}
+QGroupBox::title {{ subcontrol-origin: margin; left: 8px; color: {TEXT}; }}
+QCheckBox, QRadioButton {{ color: {TEXT}; }}
+QLabel#query_preview, QLabel#dest_preview {{
+    background: {WHITE}; border: 1px solid {BUTTON_BORDER}; padding: 4px;
+}}
+QPushButton#start_button {{ font-weight: bold; }}
 """

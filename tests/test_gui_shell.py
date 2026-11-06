@@ -148,9 +148,10 @@ class WindowTests(GuiCase):
         self.assertEqual([w.tabs.tabText(i) for i in range(w.tabs.count())], ["Download", "Help"])
         self.assertEqual(w.tabs.widget(0).objectName(), "download_tab")
         self.assertEqual(w.tabs.widget(1).objectName(), "help_tab")
-        texts = [w.tabs.widget(i).findChild(QLabel).text() for i in (0, 1)]
-        self.assertEqual(texts, ["Download: the search form arrives in the next release.",
-                                 "Help: usage instructions arrive in a later release."])
+        from rule34_downloader.gui.search_form import SearchForm
+        self.assertIsNotNone(w.tabs.widget(0).findChild(SearchForm))
+        self.assertEqual(w.tabs.widget(1).findChild(QLabel).text(),
+                         "Help: usage instructions arrive in a later release.")
 
     def test_header_title_label_text(self):
         w = self.window()

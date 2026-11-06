@@ -48,6 +48,8 @@ def main(argv=None) -> int:
     if args.smoke or args.screenshot:
         app.processEvents()
         if args.screenshot:
+            for _ in range(2):  # let the status bar text paint
+                app.processEvents()
             if not window.grab().save(args.screenshot, "PNG"):
                 print(f"error: cannot write screenshot: could not save {args.screenshot}",
                       file=sys.stderr)

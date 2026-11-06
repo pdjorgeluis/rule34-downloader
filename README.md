@@ -29,3 +29,7 @@ The window shell (mint theme, logo, Settings dialog, placeholder Download and He
     .venv/bin/python -m rule34_downloader.gui
 
 Settings stores the user ID and API key in the config file (owner-only); the key is never shown. For a headless check use `QT_QPA_PLATFORM=offscreen .venv/bin/python -m rule34_downloader.gui --smoke` (prints `smoke ok`) or `--screenshot PATH`. The GUI tests are skipped when PySide6 is missing.
+
+## Download tab
+
+The Download tab holds the search form: tags to include and exclude (a space means AND; no ratings, no OR), an optional minimum score, Newest or Oldest, Pictures / GIFs / Videos (each in its own subfolder), a number of files or All, 1 to 5 parallel workers, an optional safety-tag checkbox (off by default), a folder with Browse and New folder buttons, and a live preview of the search and the destination. The form logic lives in `form_model.py` (pure, no Qt) and the widgets in `gui/search_form.py`. Start builds a validated job but does not download yet: the runner arrives in the next release. Your choices (not the tags) are remembered in `ui.json` next to the config file; it never holds your user ID or key.
