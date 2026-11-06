@@ -84,7 +84,9 @@ The Download tab holds the search form:
 
 Files land in `<folder>/<search name>/<pictures|gifs|videos>/<id>.<ext>`. Complete files are skipped on re-runs, so you can repeat a search.
 
-Press Start. The form switches to the progress panel. It shows the search and the destination, a progress bar, counters, a live log and the API requests used this hour. A banner shows waiting, server-down, paused and slowed-down states. Pause, Resume, Retry now and Stop act on the running download. When it ends, Open folder shows the files and Back to search returns to the form with your values kept.
+Type your tags, then press Search (or press Enter in the include box). A search uses one API request and downloads nothing. The line under the preview says how many posts were found and how many files will be downloaded. Press Download to start. It stays disabled until a search matches your tags, exclusions, minimum score and safety checkbox; after you change one of those, the line reads Out of date: press Search.
+
+The form switches to the progress panel. It shows the search and the destination, a progress bar, counters, a live log, a line with the number of posts found, and the API requests used this hour. A banner shows waiting, server-down, paused and slowed-down states. Pause, Resume, Retry now and Stop act on the running download. When it ends, Open folder shows the files and Back to search returns to the form with your values kept.
 
 The Help tab explains the same things in plain words, including what each message means.
 
@@ -158,6 +160,8 @@ You can move the files with `R34_CONFIG` (the config file) and `R34_STATE` (the 
 ## Limits and good behavior
 
 The site allows 60 API requests per hour for each account. The app caps itself at 55.
+
+Each Search uses one request.
 
 One request fetches one page of up to 1000 posts. Downloading the files is not an API request.
 

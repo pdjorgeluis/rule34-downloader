@@ -14,7 +14,7 @@ from rule34_downloader import help_content, run_model  # noqa: E402
 TITLES = ["Getting started", "Your account and API key", "Searching with tags", "Options",
           "Where files are saved", "While it runs", "Rate limits",
           "Messages and what they mean", "Privacy and safety"]
-WHOLE_WORD = {"All", "Stop", "Start", "Pause", "Resume", "60", "55"}
+WHOLE_WORD = {"All", "Stop", "Start", "Search", "Download", "Pause", "Resume", "60", "55"}
 
 
 def body(title):
@@ -64,7 +64,7 @@ class HelpContentTests(unittest.TestCase):
     def test_account_section_lists_the_key_steps_and_config_filename(self):
         check(self, "Your account and API key",
               ["Generate New Key", "API Access Credentials", "config.json", "never share"])
-        check(self, "Getting started", ["Settings", "Start", "Browse"])
+        check(self, "Getting started", ["Settings", "Search", "Download", "Browse"])
 
     def test_rate_limit_section_states_60_and_55(self):
         check(self, "Rate limits", ["60", "55", "per hour", "API requests this hour"])

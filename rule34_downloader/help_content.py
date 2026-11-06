@@ -12,7 +12,8 @@ This app downloads pictures, GIFs and videos from rule34.xxx for the tags you ch
 - Press Settings (top right) and save your user ID and API key. The next section shows how to get a key.
 - On the Download tab, type the tags you want.
 - Press Browse... to choose the folder where the files go.
-- Press Start."""),
+- Press Search. The line under the preview tells you how many posts were found.
+- Press Download."""),
 
     ("Your account and API key", f"""\
 The site gives each account a private API key. The app needs your user ID and that key.
@@ -33,7 +34,11 @@ Searching for one tag OR another is not supported.
 
 To leave posts out, type their tags in the exclude box. Tick Minimum score if you only want posts with at least that score.
 
-The words rating:, sort: and score: are handled by the app (through Newest or Oldest and Minimum score), so you cannot type them as tags."""),
+The words rating:, sort: and score: are handled by the app (through Newest or Oldest and Minimum score), so you cannot type them as tags.
+
+Press Search (or press Enter in the include box) to count the posts that match your tags. A search uses one API request and downloads nothing. The line under the preview shows how many posts were found and how many files will be downloaded.
+
+Download stays disabled until the count matches your tags. If you change the include or exclude tags, the minimum score or the safety checkbox, the line reads Out of date: press Search. and you press Search again. Changing the order, the file types, the number of files, the workers or the folder does not need a new search."""),
 
     ("Options", """\
 - Newest or Oldest: which posts come first.
@@ -54,6 +59,8 @@ Files that are already there are not downloaded again, so you can run the same s
     ("While it runs", """\
 While a download runs, the app shows progress, counters and a log.
 
+If you pressed Search first, the top of the panel repeats how many posts were found.
+
 - Pause: stops fetching until you press Resume.
 - Resume: continues after a pause.
 - Stop: ends the download. Files already saved are kept.
@@ -64,6 +71,8 @@ Settings and Back to search are disabled while a download runs."""),
 
     ("Rate limits", """\
 The site allows 60 API requests per hour for each account. The app keeps itself to 55 per hour to stay safely below that.
+
+Each Search uses one request. A download then uses one more request for every page of up to 1000 posts.
 
 One request fetches one page of up to 1000 posts. Downloading the files themselves does not count as an API request.
 
@@ -87,6 +96,20 @@ Messages under the form when something is missing:
 - Choose a folder.
 - That folder path is a file.
 - tag in both include and exclude: followed by the tag. Remove it from one of the boxes.
+
+Messages under the form about a search:
+
+- Press Search to count the posts.
+- Searching...
+- Found N posts. Will download up to N files, newest first.
+- Found N posts. Will download every post that matches the file types you ticked, newest first. Only pictures and GIFs are saved, so the number of files can be lower. (The last sentence appears when not all three file types are ticked.)
+- Out of date: press Search.
+- No posts found. Check the tags.
+- The site did not accept your user ID or key. Check Settings.
+- The site asked for a captcha. Open the site in your browser, solve it, then try again.
+- No requests left this hour. Try again in about N minutes.
+- The site did not answer. Try again in a moment.
+- The search failed. Try again.
 
 Status bar:
 
