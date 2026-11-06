@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import tempfile
 from dataclasses import dataclass
@@ -202,3 +203,64 @@ def save_prefs(v: FormValues, path) -> None:
         except OSError:
             pass
         raise
+
+
+# ---- search (count) --------------------------------------------------------
+
+IDLE_TEXT = "Press Search to count the posts."
+SEARCHING_TEXT = "Searching..."
+STALE_TEXT = "Out of date: press Search."
+
+_KIND_LABELS = (("pictures", "pictures"), ("gifs", "GIFs"), ("videos", "videos"))
+
+
+def count_query(v: FormValues) -> str:
+    """Query used for the one-request count: tags only, always newest first."""
+    include = parse_tags(v.include_text)
+    if not include:
+        return ""
+    try:
+        return query.build_query(include, parse_tags(v.exclude_text),
+                                 v.min_score, "newest", v.safety)
+    except ValueError:
+        return ""
+
+
+def _join_names(names: list[str]) -> str:
+    if len(names) <= 1:
+        return "".join(names)
+    return ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def found_message(v: FormValues, total: int) -> str:
+    if total == 0:
+        return "No posts found. Check the tags."
+    posts = "1 post" if total == 1 else f"{total:,} posts"
+    text = f"Found {posts}."
+    order = "oldest" if v.order == "oldest" else "newest"
+    if v.count_mode == "all":
+        text += f" Will download every post that matches the file types you ticked, {order} first."
+    else:
+        n = min(total, v.count)
+        files_ = "1 file" if n == 1 else f"{n:,} files"
+        text += f" Will download up to {files_}, {order} first."
+    if set(v.types) != set(KINDS):
+        names = [label for key, label in _KIND_LABELS if key in v.types]
+        text += f" Only {_join_names(names)} are saved, so the number of files can be lower."
+    return text
+
+
+def search_error_text(kind: str, wait_seconds: float = 0.0) -> str:
+    if kind == "auth":
+        return "The site did not accept your user ID or key. Check Settings."
+    if kind == "captcha":
+        return "The site asked for a captcha. Open the site in your browser, solve it, then try again."
+    if kind == "budget":
+        m = max(1, math.ceil(wait_seconds / 60))
+        span = "1 minute" if m == 1 else f"{m} minutes"
+        return f"No requests left this hour. Try again in about {span}."
+    if kind == "unavailable":
+        return "The site did not answer. Try again in a moment."
+    if kind == "no_account":
+        return "No account saved - open Settings to add your user ID and API key"
+    return "The search failed. Try again."

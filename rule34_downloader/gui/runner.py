@@ -6,6 +6,11 @@ on the GUI thread.
 """
 from __future__ import annotations
 
+import threading
+import time
+from dataclasses import dataclass
+from typing import Optional
+
 from PySide6.QtCore import QCoreApplication, QObject, Qt, QThread, Signal, Slot
 
 from ..api import ApiClient
@@ -13,6 +18,7 @@ from ..backoff import Backoff, GiveUpClock
 from ..budget import RequestBudget
 from ..config import redact
 from ..engine import Job, Summary
+from ..errors import PermanentError, TemporaryError
 from ..run_model import RunStats, apply_event, mark_stopping
 
 
@@ -214,3 +220,92 @@ class JobRunner(QObject):
 
 def _clip_line(line: str) -> str:
     return line if len(line) <= 300 else line[:299] + "…"
+
+
+@dataclass(frozen=True)
+class SearchResult:
+    ok: bool
+    total: Optional[int]
+    kind: str   # "ok", "auth", "captcha", "budget", "unavailable" or "error"
+    wait_seconds: float = 0.0
+
+
+class SearchRunner(QObject):
+    """One-request post count on a daemon thread; result delivered on the GUI thread."""
+
+    finished = Signal(int, object)     # (token, SearchResult)
+    _result_in = Signal(int, object)   # worker thread -> GUI thread
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._token = 0
+        self._cancelled_token = 0
+        self._running = False
+        self._thread = None
+        # created on the GUI thread; the worker only emits the queued signal
+        self._result_in.connect(self._on_result, Qt.ConnectionType.QueuedConnection)
+
+    def is_running(self) -> bool:
+        return self._running
+
+    def start(self, query, credentials, client_factory=None, budget=None) -> Optional[int]:
+        if self._running:
+            return None
+        self._token += 1
+        token = self._token
+        self._running = True
+        thread = threading.Thread(
+            target=self._work, args=(token, query, credentials, client_factory, budget),
+            daemon=True)
+        self._thread = thread
+        thread.start()
+        return token
+
+    def cancel(self) -> None:
+        self._cancelled_token = self._token
+
+    def wait(self, timeout_ms: int = 5000) -> bool:
+        thread = self._thread
+        if thread is not None:
+            thread.join(timeout_ms / 1000.0)
+        QCoreApplication.processEvents()
+        if thread is not None and not thread.is_alive():
+            # the queued result may need a second pass of the event loop; bounded
+            deadline = time.monotonic() + 0.5
+            while self._running and time.monotonic() < deadline:
+                time.sleep(0.005)
+                QCoreApplication.processEvents()
+        return not self.is_running()
+
+    def _work(self, token, query, credentials, client_factory, budget):
+        result = self._search(query, credentials, client_factory, budget)
+        try:
+            self._result_in.emit(token, result)
+        except RuntimeError:   # runner already deleted
+            pass
+
+    @staticmethod
+    def _search(query, credentials, client_factory, budget) -> SearchResult:
+        try:
+            budget = budget if budget is not None else RequestBudget(limit=55)
+            if budget.remaining() <= 0 or not budget.acquire():
+                return SearchResult(False, None, "budget", budget.next_available_in())
+            client = (client_factory or ApiClient)(credentials)
+            total = client.total_count(query)
+            return SearchResult(True, int(total), "ok")
+        except PermanentError as exc:
+            if exc.kind == "auth":
+                return SearchResult(False, None, "auth")
+            if exc.kind == "captcha":
+                return SearchResult(False, None, "captcha")
+            return SearchResult(False, None, "error")
+        except TemporaryError:
+            return SearchResult(False, None, "unavailable")
+        except Exception:
+            return SearchResult(False, None, "error")
+
+    @Slot(int, object)
+    def _on_result(self, token, result):
+        self._running = False
+        if token == self._token and token != self._cancelled_token:
+            self.finished.emit(token, result)
