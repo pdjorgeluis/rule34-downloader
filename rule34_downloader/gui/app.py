@@ -7,6 +7,7 @@ import sys
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication
 
+from .. import version
 from . import theme
 from .main_window import MainWindow
 
@@ -40,6 +41,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="rule34_downloader.gui")
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--screenshot", metavar="PATH")
+    parser.add_argument("--version", action="version",
+                        version=f"Rule34 Downloader {version.__version__}")
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
 
     app = create_app([sys.argv[0]] if argv is None else ["rule34_downloader.gui"])
