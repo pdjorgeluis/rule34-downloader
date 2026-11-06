@@ -240,7 +240,7 @@ def banner_text(stats: RunStats) -> str:
     if state == "waiting":
         text = f"Waiting {int(_num(stats.wait_seconds))} s ({stats.wait_reason})."
     elif state == "unavailable":
-        text = (f"Server unavailable: {stats.unavailable_message}. "
+        text = (f"Server unavailable: {clean_log_line(stats.unavailable_message)}. "
                 "Retrying automatically, or press Retry now.")
     elif state == "paused":
         text = "Paused. Press Resume to continue."
