@@ -177,6 +177,64 @@ class FormTests(FormCase):
             self.f.browse_button.click()
         self.assertEqual(self.f.folder_edit.text(), str(self.tmp))
 
+    def test_browse_requests_qt_dialog_not_native(self):
+        from PySide6.QtWidgets import QFileDialog as RealDialog
+        dont, only = RealDialog.Option.DontUseNativeDialog, RealDialog.Option.ShowDirsOnly
+        self.window()
+        with mock.patch("rule34_downloader.gui.search_form.QFileDialog") as dlg:
+            dlg.getExistingDirectory.return_value = ""
+            self.f.browse_button.click()
+        args = dlg.getExistingDirectory.call_args[0]
+        self.assertEqual(len(args), 4)
+        self.assertTrue(args[3] & dont)
+        self.assertTrue(args[3] & only)
+
+    def _probe_real_dialog(self):
+        """Click Browse unpatched; a timer inspects the dialog, records, rejects it."""
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QApplication, QDialogButtonBox, QFileDialog
+        self.window()
+        self.fill(folder=str(self.tmp))
+        rec, errors, clock = {}, [], {"n": 0}
+
+        def poll():
+            try:
+                dlg = next((w for w in QApplication.topLevelWidgets()
+                            if isinstance(w, QFileDialog) and w.isVisible()), None)
+                if dlg is None:
+                    clock["n"] += 1
+                    if clock["n"] < 60:
+                        QTimer.singleShot(50, poll)
+                    return
+                box = dlg.findChild(QDialogButtonBox)
+                rec["texts"] = [b.text().replace("&", "") for b in box.buttons()]
+                rec["size"] = (dlg.width(), dlg.height())
+                dlg.reject()
+            except Exception as exc:  # Qt would swallow it
+                errors.append(exc)
+                for w in QApplication.topLevelWidgets():
+                    if isinstance(w, QFileDialog):
+                        w.reject()
+
+        QTimer.singleShot(0, poll)
+        self.f.browse_button.click()
+        if errors:
+            raise errors[0]
+        self.assertTrue(rec, "dialog never appeared")
+        self.assertEqual(self.f.folder_edit.text(), str(self.tmp))
+        return rec
+
+    def test_browse_real_dialog_has_choose_and_cancel_buttons(self):
+        rec = self._probe_real_dialog()
+        self.assertEqual(sorted(rec["texts"]), ["Cancel", "Choose"])
+
+    def test_browse_real_dialog_fits_a_small_screen(self):
+        w, h = self._probe_real_dialog()["size"]
+        self.assertGreater(w, 0)
+        self.assertGreater(h, 0)
+        self.assertLessEqual(w, 900)
+        self.assertLessEqual(h, 700)
+
     def _new_folder(self, name, ok=True):
         with mock.patch("rule34_downloader.gui.search_form.QInputDialog") as dlg:
             dlg.getText.return_value = (name, ok)

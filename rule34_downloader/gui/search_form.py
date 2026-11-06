@@ -252,7 +252,10 @@ class SearchForm(QWidget):
         return str(Path.home())
 
     def browse(self) -> None:
-        chosen = QFileDialog.getExistingDirectory(self, "Choose a folder", self._start_dir())
+        # Avoid the native dialog: the GTK chooser can open larger than the screen and hide its confirm button.
+        chosen = QFileDialog.getExistingDirectory(
+            self, "Choose a folder", self._start_dir(),
+            QFileDialog.Option.ShowDirsOnly | QFileDialog.Option.DontUseNativeDialog)
         if chosen:
             self._set_folder_from_action(chosen)
 
