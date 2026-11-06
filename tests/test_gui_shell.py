@@ -150,8 +150,10 @@ class WindowTests(GuiCase):
         self.assertEqual(w.tabs.widget(1).objectName(), "help_tab")
         from rule34_downloader.gui.search_form import SearchForm
         self.assertIsNotNone(w.tabs.widget(0).findChild(SearchForm))
-        self.assertEqual(w.tabs.widget(1).findChild(QLabel).text(),
-                         "Help: usage instructions arrive in a later release.")
+        from PySide6.QtWidgets import QTextBrowser
+        browser = w.tabs.widget(1).findChild(QTextBrowser, "help_browser")
+        self.assertIsNotNone(browser)
+        self.assertIn("Getting started", browser.toPlainText())
 
     def test_header_title_label_text(self):
         w = self.window()

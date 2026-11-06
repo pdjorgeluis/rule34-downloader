@@ -36,7 +36,7 @@ class SearchForm(QWidget):
     # ---- construction ---------------------------------------------------
     def _build(self):
         self.include_edit = _name(QLineEdit(), "include_edit")
-        self.include_edit.setPlaceholderText("tags to include, separated by spaces")
+        self.include_edit.setPlaceholderText("tags to include, separated by spaces (use _ inside a tag, e.g. hyuuga_hinata)")
         self.exclude_edit = _name(QLineEdit(), "exclude_edit")
         self.exclude_edit.setPlaceholderText("tags to exclude")
         self.min_score_check = _name(QCheckBox("Minimum score"), "min_score_check")

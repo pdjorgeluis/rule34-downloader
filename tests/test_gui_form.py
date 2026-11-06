@@ -53,7 +53,8 @@ class FormTests(FormCase):
         self.window()
         f = self.f
         self.assertEqual(f.include_edit.text(), "")
-        self.assertEqual(f.include_edit.placeholderText(), "tags to include, separated by spaces")
+        self.assertEqual(f.include_edit.placeholderText(),
+                         "tags to include, separated by spaces (use _ inside a tag, e.g. hyuuga_hinata)")
         self.assertEqual(f.exclude_edit.placeholderText(), "tags to exclude")
         self.assertEqual([f.order_combo.itemText(i) for i in range(f.order_combo.count())],
                          ["Newest", "Oldest"])

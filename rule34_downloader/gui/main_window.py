@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import config, form_model
+from .help_tab import HelpTab
 from .run_panel import RunPanel
 from .runner import JobRunner
 from .search_form import SearchForm
@@ -80,9 +81,7 @@ class MainWindow(QMainWindow):
             lambda _c=False: self.download_stack.setCurrentIndex(0))
         self.runner.finished.connect(self._on_run_finished)
         self.tabs.addTab(self._download_page(self.download_stack), "Download")
-        self.tabs.addTab(
-            self._page("help_tab", "Help: usage instructions arrive in a later release."),
-            "Help")
+        self.tabs.addTab(self._help_page(), "Help")
         outer.addWidget(self.tabs, 1)
         self.setCentralWidget(central)
 
@@ -140,14 +139,12 @@ class MainWindow(QMainWindow):
         event.accept()
 
     @staticmethod
-    def _page(name: str, text: str) -> QWidget:
+    def _help_page() -> QWidget:
         page = QWidget()
-        page.setObjectName(name)
+        page.setObjectName("help_tab")
         page.setAttribute(Qt.WA_StyledBackground, True)
         lay = QVBoxLayout(page)
-        label = QLabel(text)
-        label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-        lay.addWidget(label)
+        lay.addWidget(HelpTab())
         return page
 
     def refresh_status(self) -> None:

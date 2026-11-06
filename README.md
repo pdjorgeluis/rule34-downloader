@@ -37,3 +37,8 @@ The Download tab holds the search form: tags to include and exclude (a space mea
 ## Running a download
 
 Pressing Start (it needs a saved account in Settings; otherwise the status bar says so and nothing starts) switches the Download tab to a progress panel: the search and the destination, a progress bar (a busy bar while the total is unknown), counters, a live log, the API requests used this hour, and a banner for waiting, server-down, paused and slowed-down states. Pause, Resume, Retry now and Stop act on the running job; when it ends a plain result line appears (red on an error), Open folder shows the files, and Back to search returns to the form with your values kept. Settings and Back are disabled while a download runs. Closing the window during a download asks first, then stops the job and waits up to 10 seconds. The panel logic lives in `run_model.py` (pure text helpers) and `gui/run_panel.py`; the thread bridge is `gui/runner.py`.
+
+
+## Help tab
+
+The Help tab is a read-only page with a contents list, written for non-technical readers: getting started, the account and API key, searching with tags, options, where files go, controlling a run, rate limits, what each message means, and privacy and safety. Its text lives in `help_content.py` (pure, no Qt, with `help_html()`); `gui/help_tab.py` shows it in a `QTextBrowser`. Contents links scroll inside the page, and only `http`/`https` links (the site's options page) open in the desktop browser.
