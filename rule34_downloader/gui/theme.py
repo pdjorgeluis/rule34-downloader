@@ -41,4 +41,9 @@ QLabel#query_preview, QLabel#dest_preview {{
     background: {WHITE}; border: 1px solid {BUTTON_BORDER}; padding: 4px;
 }}
 QPushButton#start_button {{ font-weight: bold; }}
+QProgressBar {{ background: {WHITE}; border: 1px solid {BUTTON_BORDER}; color: {TEXT}; text-align: center; }}
+QProgressBar::chunk {{ background: {TEAL_DARK}; }}
+QLabel#banner {{ background: {WHITE}; border: 1px solid {BUTTON_BORDER}; padding: 4px; color: {TEXT}; }}
+QLabel#result_label {{ color: {TEXT}; font-weight: bold; }}
+QLabel#result_label[error="true"] {{ color: {ERROR_RED}; }}
 """

@@ -6,18 +6,19 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QMainWindow, QPushButton, QStatusBar, QTabWidget,
-    QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton, QStackedWidget,
+    QStatusBar, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from .. import config, form_model
+from .run_panel import RunPanel
+from .runner import JobRunner
 from .search_form import SearchForm
 from .settings_dialog import SettingsDialog
 
 LOGO_PATH = Path(__file__).parent / "assets" / "logo.svg"
 TITLE = "Rule34 Downloader"
 NO_ACCOUNT = "No account saved - open Settings to add your user ID and API key"
-READY = "Ready: the downloader engine is connected in the next release."
 
 
 def logo_icon() -> QIcon:
@@ -25,8 +26,10 @@ def logo_icon() -> QIcon:
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, config_file=None, prefs_file=None):
+    def __init__(self, config_file=None, prefs_file=None, job_factory=None,
+                 budget_factory=None):
         super().__init__()
+        self.job_factory = job_factory
         self.config_file = Path(config_file) if config_file is not None else None
         if prefs_file is not None:
             self.prefs_file = Path(prefs_file)
@@ -67,7 +70,16 @@ class MainWindow(QMainWindow):
         self.tabs.setObjectName("tabs")
         self.search_form = SearchForm(values=form_model.load_prefs(self.prefs_file))
         self.search_form.start_requested.connect(self._on_start_requested)
-        self.tabs.addTab(self._download_page(self.search_form), "Download")
+        self.runner = JobRunner(self)
+        self.run_panel = RunPanel(self.runner, budget_factory)
+        self.download_stack = QStackedWidget()
+        self.download_stack.setObjectName("download_stack")
+        self.download_stack.addWidget(self.search_form)
+        self.download_stack.addWidget(self.run_panel)
+        self.run_panel.back_button.clicked.connect(
+            lambda _c=False: self.download_stack.setCurrentIndex(0))
+        self.runner.finished.connect(self._on_run_finished)
+        self.tabs.addTab(self._download_page(self.download_stack), "Download")
         self.tabs.addTab(
             self._page("help_tab", "Help: usage instructions arrive in a later release."),
             "Help")
@@ -86,12 +98,46 @@ class MainWindow(QMainWindow):
         lay.addWidget(form)
         return page
 
-    def _on_start_requested(self, _job_config) -> None:
+    def _on_start_requested(self, job_config) -> None:
         try:
             form_model.save_prefs(self.search_form.values(), self.prefs_file)
         except Exception:
             pass  # preferences are optional
-        self.statusBar().showMessage(READY)
+        try:
+            creds = config.load_credentials(path=self.config_file)
+        except config.MissingCredentials:
+            self.statusBar().showMessage(NO_ACCOUNT)
+            return
+        if self.runner.is_running():
+            return
+        self.run_panel.begin(job_config)
+        self.runner.start(job_config, creds, self.job_factory)
+        del creds
+        self.download_stack.setCurrentIndex(1)
+        self.statusBar().showMessage(
+            self.run_panel.dest_label.text().replace("Saves to:", "Downloading to", 1))
+        self.settings_button.setEnabled(False)
+
+    def _on_run_finished(self, _summary) -> None:
+        self.statusBar().showMessage(self.run_panel.result_label.text())
+        self.settings_button.setEnabled(True)
+
+    def closeEvent(self, event) -> None:
+        if self.runner.is_running():
+            answer = QMessageBox.question(
+                self, "Download running", "A download is running. Stop it and quit?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if answer != QMessageBox.Yes:
+                event.ignore()
+                return
+            self.runner.stop()
+            if not self.runner.wait(10000):
+                event.ignore()
+                self.statusBar().showMessage(
+                    "Still stopping - try closing again in a moment.")
+                return
+        self.run_panel.budget_timer.stop()
+        event.accept()
 
     @staticmethod
     def _page(name: str, text: str) -> QWidget:

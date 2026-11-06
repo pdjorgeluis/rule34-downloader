@@ -13,6 +13,9 @@ from test_gui_shell import GuiCase, HAVE_QT, close, hex_rgb  # noqa: E402
 
 from rule34_downloader import form_model  # noqa: E402
 
+if HAVE_QT:
+    from rule34_downloader.gui.main_window import NO_ACCOUNT  # noqa: E402
+
 REPO = Path(__file__).resolve().parent.parent
 
 
@@ -258,8 +261,7 @@ class FormTests(FormCase):
         w = self.window()
         self.fill()
         self.f.start_button.click()
-        self.assertEqual(w.statusBar().currentMessage(),
-                         "Ready: the downloader engine is connected in the next release.")
+        self.assertEqual(w.statusBar().currentMessage(), NO_ACCOUNT)
 
     def test_screenshot_status_bar_is_not_blank(self):
         from PySide6.QtGui import QImage
@@ -318,8 +320,7 @@ class FormTests(FormCase):
         self.fill()
         with mock.patch.object(form_model, "save_prefs", side_effect=OSError("disk full")):
             self.f.start_button.click()
-        self.assertEqual(w.statusBar().currentMessage(),
-                         "Ready: the downloader engine is connected in the next release.")
+        self.assertEqual(w.statusBar().currentMessage(), NO_ACCOUNT)
 
 
 if __name__ == "__main__":
