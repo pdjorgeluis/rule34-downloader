@@ -172,9 +172,9 @@ class WindowTests(GuiCase):
             self.assertTrue(any(img.pixelColor(x, y).alpha() > 0
                                 for x in range(size) for y in range(size)))
 
-    def test_min_size_720x520(self):
+    def test_min_size_800x640(self):
         m = self.window().minimumSize()
-        self.assertEqual((m.width(), m.height()), (720, 520))
+        self.assertEqual((m.width(), m.height()), (800, 640))
 
     def test_status_bar_without_account(self):
         w = self.window()

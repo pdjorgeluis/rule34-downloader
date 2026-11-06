@@ -40,7 +40,8 @@ class MainWindow(QMainWindow):
             self.prefs_file = config.config_path().with_name("ui.json")
         self.setWindowTitle(TITLE)
         self.setWindowIcon(logo_icon())
-        self.setMinimumSize(720, 520)
+        self.setMinimumSize(800, 640)
+        self.resize(900, 720)
 
         central = QWidget()
         outer = QVBoxLayout(central)

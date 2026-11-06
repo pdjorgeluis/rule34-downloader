@@ -20,7 +20,7 @@ QTabWidget::pane {{ border: 1px solid {BUTTON_BORDER}; background: {MINT}; }}
 QWidget#download_tab, QWidget#help_tab {{ background: {MINT}; }}
 QTabBar::tab {{ background: {BUTTON_GRAY}; color: {TEXT}; border: 1px solid {BUTTON_BORDER}; padding: 6px 16px; }}
 QTabBar::tab:selected {{ background: {WHITE}; }}
-QLineEdit, QSpinBox, QComboBox, QPlainTextEdit, QListWidget {{
+QLineEdit, QPlainTextEdit, QListWidget {{
     background: {WHITE}; color: {TEXT}; border: 1px solid {BUTTON_BORDER};
 }}
 QPushButton {{
