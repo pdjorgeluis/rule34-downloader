@@ -20,3 +20,12 @@ Files land in `<output>/<search>/<pictures|gifs|videos>/<id>.<ext>`; complete fi
 - `budget.py`: `RequestBudget` keeps a rolling 55-per-hour count of API requests in `state.json` (`R34_STATE`, else `~/.local/state/rule34-downloader/`), waiting when full.
 - `api.py`: `ApiClient` now classifies every reply with `check_reply` (BOM stripped first via `errors.strip_bom`) and maps timeouts/connection failures to `TemporaryError`; `_get` returns a `Reply` (`(status, body)` plus `.headers`).
 - `resilience.py`: `ThrottleGate` (one shared pause for the API client and downloads), `Adaptive` (one worker and slower delay after overloads, recovering one level per 600 clean seconds), `ResilientClient` (retries page fetches with backoff or `Retry-After`, honours the request budget, gives up with `ServerUnavailable` after the window, raises `Stopped` when interrupted; `total_count` is a single attempt) and `check_file_reply` (classifies file-download statuses; no download code uses it yet). `Job(..., retries=True)` wires all of it in: page and per-file retries (3 attempts per file) on one shared gate, adaptive workers/delay, the request budget, `unavailable_policy` `stop`/`pause` with `retry_now()`, and the `server_unavailable`, `unavailable_retry`, `permanent_error`, `waiting`, `retry` and `adaptive` events.
+
+## GUI (work in progress)
+
+The window shell (mint theme, logo, Settings dialog, placeholder Download and Help tabs) needs PySide6, kept out of the CLI and engine. Create the venv and run:
+
+    uv venv .venv && uv pip install -r requirements-gui.txt
+    .venv/bin/python -m rule34_downloader.gui
+
+Settings stores the user ID and API key in the config file (owner-only); the key is never shown. For a headless check use `QT_QPA_PLATFORM=offscreen .venv/bin/python -m rule34_downloader.gui --smoke` (prints `smoke ok`) or `--screenshot PATH`. The GUI tests are skipped when PySide6 is missing.

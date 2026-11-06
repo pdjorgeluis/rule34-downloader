@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <title>Rule34 Downloader</title>
+  <rect x="2" y="2" width="60" height="60" rx="12" fill="#0e3d44"/>
+  <rect x="2.75" y="2.75" width="58.5" height="58.5" rx="11.25" fill="none" stroke="#3ff3d4" stroke-width="1.5" opacity="0.55"/>
+  <g fill="none" stroke="#3ff3d4" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke-width="9" opacity="0.16"><path d="M32 11 V37 M21 27 L32 38 L43 27"/><path d="M15 44 V51 H49 V44"/></g>
+    <g stroke-width="6" opacity="0.32"><path d="M32 11 V37 M21 27 L32 38 L43 27"/><path d="M15 44 V51 H49 V44"/></g>
+    <g stroke-width="3"><path d="M32 11 V37 M21 27 L32 38 L43 27"/><path d="M15 44 V51 H49 V44"/></g>
+  </g>
+  <rect x="47" y="10" width="4" height="4" fill="#3ff3d4"/>
+  <rect x="52" y="16" width="2" height="2" fill="#3ff3d4" opacity="0.7"/>
+  <rect x="11" y="14" width="2" height="2" fill="#3ff3d4" opacity="0.7"/>
+</svg>
