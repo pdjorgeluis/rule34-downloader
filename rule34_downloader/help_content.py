@@ -97,7 +97,7 @@ When a run ends:
 
 - Finished: shows how many files were downloaded, were already there, were skipped or failed.
 - Stopped: the same counts, after you pressed Stop.
-- Stopped by an error: the app could not continue. The reason follows in brackets.
+- Stopped by an error: the app could not continue. The kind of error follows in brackets, then the message.
 
 Missing authentication means the user ID or the key is wrong. Open Settings and check both."""),
 
