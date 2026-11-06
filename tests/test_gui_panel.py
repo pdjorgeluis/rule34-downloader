@@ -275,5 +275,330 @@ class PanelTests(PanelCase):
         self.assertIn("Retry now", self.panel.banner.text())
 
 
+@unittest.skipUnless(HAVE_QT, "PySide6 not installed")
+class FlowTests(PanelCase):
+    # -- result ------------------------------------------------------------------
+    def test_result_label_shows_headline_when_finished(self):
+        self.window()
+        self.panel.begin(self.job())
+        self.assertTrue(self.panel.result_label.isHidden())
+        self.finish(Summary(reason="count_reached", downloaded=5))
+        self.assertFalse(self.panel.result_label.isHidden())
+        self.assertEqual(self.panel.result_label.text(),
+                         "Finished: 5 downloaded, 0 already there, 0 skipped, 0 failed")
+        self.assertEqual(self.panel.result_label.property("error"), "false")
+
+    def test_result_label_error_uses_error_red(self):
+        from rule34_downloader.gui import theme
+        self.window()
+        self.panel.begin(self.job())
+        self.finish(Summary(reason="permanent_error", error="bad key", error_kind="auth"))
+        self.assertEqual(self.panel.result_label.property("error"), "true")
+        self.assertIn("Stopped by an error (auth): bad key", self.panel.result_label.text())
+        self.assertIn('QLabel#result_label[error="true"] { color: %s; }' % theme.ERROR_RED,
+                      theme.stylesheet())
+
+    # -- back / settings ---------------------------------------------------------
+    def test_back_button_returns_to_form_and_keeps_values(self):
+        w = self.window()
+        self.fill("cat dog", count=7)
+        w.download_stack.setCurrentIndex(1)
+        self.panel.begin(self.job())
+        self.finish(Summary(reason="stopped"))
+        self.assertTrue(self.panel.back_button.isEnabled())
+        self.panel.back_button.click()
+        self.assertEqual(w.download_stack.currentIndex(), 0)
+        self.assertEqual(self.form.include_edit.text(), "cat dog")
+        self.assertEqual(self.form.count_spin.value(), 7)
+
+    def test_back_button_disabled_while_running(self):
+        self.window()
+        self.panel.begin(self.job())
+        for state in ("running", "waiting", "paused", "unavailable", "stopping"):
+            self.drive(state)
+            self.assertFalse(self.panel.back_button.isEnabled(), state)
+
+    def test_open_folder_button_opens_result_folder(self):
+        self.window()
+        folder = self.tmp / "out" / "cat"
+        folder.mkdir(parents=True)
+        self.panel.begin(self.job())
+        self.drive("running")
+        self.assertFalse(self.panel.open_folder_button.isEnabled())
+        self.finish(Summary(reason="end_of_results"))
+        self.assertTrue(self.panel.open_folder_button.isEnabled())
+        with mock.patch("rule34_downloader.gui.run_panel.QDesktopServices.openUrl") as opener:
+            self.panel.open_folder_button.click()
+        opener.assert_called_once()
+        self.assertEqual(opener.call_args[0][0].toLocalFile(), str(folder))
+
+    def test_settings_button_disabled_while_running(self):
+        w = self.window()
+        self.creds()
+        self.fill()
+        with mock.patch.object(self.runner, "start", return_value=True):
+            self.form.start_button.click()
+        self.assertFalse(w.settings_button.isEnabled())
+        self.finish(Summary(reason="stopped"))
+        self.assertTrue(w.settings_button.isEnabled())
+
+    # -- budget ------------------------------------------------------------------
+    def test_budget_label_shows_used_of_limit(self):
+        self.window()
+        self.assertEqual(self.panel.budget_label.text(), "API requests this hour: 7 / 55")
+        self.panel.budget_factory = lambda: (_ for _ in ()).throw(OSError("gone"))
+        self.panel.begin(self.job())
+        self.assertEqual(self.panel.budget_label.text(), "API requests this hour: unknown")
+        self.panel.budget_factory = lambda: None
+        self.panel.refresh_budget()
+        self.assertEqual(self.panel.budget_label.text(), "API requests this hour: unknown")
+
+    def test_budget_timer_runs_only_while_running(self):
+        self.window()
+        timer = self.panel.budget_timer
+        self.assertFalse(timer.isActive())
+        self.assertEqual(timer.interval(), 5000)
+        self.panel.begin(self.job())
+        self.assertTrue(timer.isActive())
+        self.finish(Summary(reason="stopped"))
+        self.assertFalse(timer.isActive())
+
+    # -- close -------------------------------------------------------------------
+    def _closing(self, w, answer, wait_ok=True):
+        qmb = mock.MagicMock()
+        qmb.question.return_value = getattr(qmb, answer)
+        run = mock.patch.object(self.runner, "is_running", return_value=True)
+        stop = mock.patch.object(self.runner, "stop")
+        wait = mock.patch.object(self.runner, "wait", return_value=wait_ok)
+        with mock.patch("rule34_downloader.gui.main_window.QMessageBox", qmb), run, stop as s, \
+                wait as wt:
+            closed = w.close()
+        return closed, qmb, s, wt
+
+    def test_close_while_running_asks_and_stops_on_yes(self):
+        w = self.window()
+        closed, qmb, stop, wait = self._closing(w, "Yes")
+        qmb.question.assert_called_once()
+        self.assertEqual(qmb.question.call_args[0][1:3],
+                         ("Download running", "A download is running. Stop it and quit?"))
+        stop.assert_called_once_with()
+        wait.assert_called_once_with(10000)
+        self.assertTrue(closed)
+        self.assertFalse(self.panel.budget_timer.isActive())
+
+    def test_close_while_running_stays_open_on_no(self):
+        w = self.window()
+        closed, qmb, stop, wait = self._closing(w, "No")
+        self.assertFalse(closed)
+        stop.assert_not_called()
+        self.assertTrue(w.isVisible())
+        closed, qmb, stop, wait = self._closing(w, "Yes", wait_ok=False)
+        self.assertFalse(closed)
+        stop.assert_called_once_with()
+        self.assertTrue(w.isVisible())
+        self.assertEqual(w.statusBar().currentMessage(),
+                         "Still stopping - try closing again in a moment.")
+
+    def test_close_when_idle_closes_without_asking(self):
+        w = self.window()
+        qmb = mock.MagicMock()
+        with mock.patch("rule34_downloader.gui.main_window.QMessageBox", qmb):
+            closed = w.close()
+        self.assertTrue(closed)
+        qmb.question.assert_not_called()
+
+    # -- real runs ---------------------------------------------------------------
+    def test_full_run_against_mock_server_end_to_end(self):
+        factory = self.server(total=25)
+        w = self.window(job_factory=factory)
+        self.creds()
+        self.fill(count=5)
+        self.form.start_button.click()
+        self.assertTrue(self.pump(lambda: not self.panel.result_label.isHidden()),
+                        self.panel.log_view.toPlainText()[-500:])
+        self.assertTrue(self.panel.result_label.text().startswith("Finished: 5 downloaded, "))
+        files = [p for p in (self.tmp / "out").rglob("*") if p.is_file()]
+        self.assertEqual(len(files), 5)
+        self.assertTrue(all("cat" in p.parts for p in files))
+        self.assertTrue(self.pump(lambda: w.settings_button.isEnabled()))
+        self.assertEqual(w.statusBar().currentMessage(), self.panel.result_label.text())
+        self.assertEqual(self.panel.progress_bar.value(), 100)
+        self.assertTrue(self.panel.back_button.isEnabled())
+        self.panel.back_button.click()
+        self.assertEqual(w.download_stack.currentIndex(), 0)
+
+    def test_status_bar_shows_downloading_then_headline(self):
+        w = self.window()
+        self.creds()
+        self.fill()
+        with mock.patch.object(self.runner, "start", return_value=True):
+            self.form.start_button.click()
+        self.assertEqual(w.statusBar().currentMessage(),
+                         f"Downloading to {self.tmp / 'out' / 'cat'}")
+        self.finish(Summary(reason="stopped", downloaded=1))
+        self.assertEqual(w.statusBar().currentMessage(),
+                         "Stopped: 1 downloaded, 0 already there, 0 skipped, 0 failed")
+
+    def test_start_error_path_shows_error_headline(self):
+        def boom(cfg, creds, on_event):
+            raise RuntimeError("cannot build job")
+        w = self.window(job_factory=boom)
+        self.creds()
+        self.fill()
+        self.form.start_button.click()
+        self.assertTrue(self.pump(lambda: not self.panel.result_label.isHidden()))
+        self.assertEqual(self.panel.result_label.property("error"), "true")
+        self.assertIn("cannot build job", self.panel.result_label.text())
+        self.assertTrue(w.settings_button.isEnabled())
+        self.assertTrue(self.panel.back_button.isEnabled())
+
+    def test_second_run_resets_the_panel(self):
+        self.window()
+        self.panel.begin(self.job(count=4))
+        self.runner.stats.downloaded = 3
+        self.runner.log_line.emit("old line")
+        self.drive("waiting", wait_seconds=3, wait_reason="x")
+        self.finish(Summary(reason="count_reached", downloaded=3))
+        self.runner.stats = RunStats()
+        self.panel.begin(self.job(include=["dog"]))
+        self.assertEqual(self.panel.log_view.toPlainText(), "")
+        self.assertTrue(self.panel.result_label.isHidden())
+        self.assertTrue(self.panel.banner.isHidden())
+        self.assertEqual(self.panel.progress_bar.value(), 0)
+        self.assertEqual(self.panel.counters_label.text(), counters_text(RunStats()))
+        self.assertEqual(self.panel.query_label.text(), "Search: dog")
+        self.assertTrue(self.panel.budget_timer.isActive())
+
+    def test_panel_never_shows_key_text(self):
+        factory = self.server(total=25)
+        w = self.window(job_factory=factory)
+        self.creds()
+        self.fill(count=2)
+        self.form.start_button.click()
+        self.assertTrue(self.pump(lambda: not self.panel.result_label.isHidden()))
+        self.assertTrue(self.pump(lambda: w.settings_button.isEnabled()))
+        self.assertNotIn(API_KEY, self.all_text(w))
+
+    def test_screenshot_flag_still_shows_the_form(self):
+        env = {k: v for k, v in os.environ.items() if k not in ("R34_USER_ID", "R34_API_KEY")}
+        env.update(HOME=str(self.tmp), R34_CONFIG=str(self.cfg), QT_QPA_PLATFORM="offscreen")
+        out = self.tmp / "shot.png"
+        r = subprocess.run([sys.executable, "-m", "rule34_downloader.gui", "--screenshot",
+                            str(out)], cwd=str(REPO), env=env, capture_output=True,
+                           text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertGreater(out.stat().st_size, 0)
+        r = subprocess.run([sys.executable, "-m", "rule34_downloader.gui", "--smoke"],
+                           cwd=str(REPO), env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "smoke ok"), r.stderr)
+
+    # -- robustness --------------------------------------------------------------
+    def test_panel_slots_survive_finished_without_begin(self):
+        from rule34_downloader.gui.run_panel import RunPanel
+        from rule34_downloader.gui.runner import JobRunner
+        runner = JobRunner()
+        panel = RunPanel(runner, fake_budget_factory)
+        self.addCleanup(panel.close)
+        errors = []
+        with mock.patch.object(sys, "excepthook", lambda *a: errors.append(a)):
+            runner.log_line.emit("hello:")
+            runner.stats_changed.emit()
+            runner.state_changed.emit("running")
+            runner.stats.state = "finished"
+            runner.finished.emit(Summary(reason="stopped"))
+            text = panel.result_label.text()
+            runner.finished.emit(Summary(reason="count_reached", downloaded=9))
+            self.app.processEvents()
+        self.assertEqual(errors, [])
+        self.assertEqual(panel.result_label.text(), text)
+        self.assertTrue(text.startswith("Stopped:"))
+        panel.open_folder()   # no job config yet: no exception
+
+    def test_busy_bar_value_is_set_on_finish(self):
+        self.window()
+        bar = self.panel.progress_bar
+        self.panel.begin(self.job())
+        self.drive("running")
+        self.assertEqual((bar.minimum(), bar.maximum()), (0, 0))
+        self.finish(Summary(reason="end_of_results"))
+        self.assertEqual((bar.minimum(), bar.maximum(), bar.value()), (0, 100, 100))
+        self.runner.stats = RunStats()
+        self.panel.begin(self.job())
+        self.drive("running")
+        self.finish(Summary(reason="stopped"))
+        self.assertEqual((bar.minimum(), bar.maximum(), bar.value()), (0, 100, 0))
+        self.runner.stats = RunStats()
+        self.panel.begin(self.job(count=4))
+        self.runner.stats.downloaded = 2
+        self.finish(Summary(reason="stopped"))
+        self.assertEqual(bar.value(), 50)
+
+    def test_begin_runs_before_start_with_a_fake_runner(self):
+        seen = {}
+        holder = {}
+
+        class FakeRunner(QObject):
+            event = Signal(str, object)
+            stats_changed = Signal()
+            log_line = Signal(str)
+            state_changed = Signal(str)
+            finished = Signal(object)
+
+            def __init__(fake, parent=None):
+                super().__init__(parent)
+                fake.stats = RunStats()
+
+            def is_running(fake):
+                return False
+
+            def start(fake, cfg, creds, factory=None):
+                panel = holder["w"].run_panel
+                seen["query"] = panel.query_label.text()
+                seen["timer"] = panel.budget_timer.isActive()
+                fake.stats.state = "running"
+                fake.state_changed.emit("running")
+                seen["stop_enabled"] = panel.stop_button.isEnabled()
+                return True
+
+            def stop(fake):
+                pass
+
+            def wait(fake, ms=0):
+                return True
+
+            def pause(fake):
+                pass
+
+            resume = retry_now = pause
+
+        from rule34_downloader.gui.main_window import MainWindow
+        with mock.patch("rule34_downloader.gui.main_window.JobRunner", FakeRunner):
+            w = MainWindow(config_file=self.cfg, prefs_file=self.prefs,
+                           budget_factory=fake_budget_factory)
+        holder["w"] = w
+        self.addCleanup(w.close)
+        w.show()
+        self.creds()
+        w.search_form.include_edit.setText("cat")
+        w.search_form.folder_edit.setText(str(self.tmp / "out"))
+        w.search_form.start_button.click()
+        self.assertEqual(seen["query"], "Search: cat")
+        self.assertTrue(seen["timer"])
+        self.assertTrue(seen["stop_enabled"])
+
+    def test_start_while_running_changes_nothing(self):
+        w = self.window()
+        self.creds()
+        self.fill()
+        with mock.patch.object(self.runner, "is_running", return_value=True), \
+                mock.patch.object(self.panel, "begin") as begin, \
+                mock.patch.object(self.runner, "start") as start:
+            self.form.start_button.click()
+        begin.assert_not_called()
+        start.assert_not_called()
+        self.assertEqual(w.download_stack.currentIndex(), 0)
+        self.assertTrue(w.settings_button.isEnabled())
+
+
 if __name__ == "__main__":
     unittest.main()
