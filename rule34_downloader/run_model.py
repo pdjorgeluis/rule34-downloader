@@ -5,9 +5,14 @@ Pure standard library. The GUI runner feeds every engine event through
 """
 from __future__ import annotations
 
+import re
 from collections import deque
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
+
+from . import files as _files
+from . import query as _query
 
 STATES = ("idle", "running", "waiting", "paused", "unavailable", "stopping", "finished")
 LOG_MAX_LINES = 500
@@ -208,3 +213,67 @@ def budget_snapshot(budget) -> tuple:
         return int(budget.used()), int(budget.limit)
     except Exception:
         return 0, 0
+
+
+# -- panel text helpers (card 4d) ------------------------------------------------
+
+def format_bytes(n) -> str:
+    if not _is_int(n) or n < 0:
+        n = 0
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024 ** 2:
+        return f"{n / 1024:.1f} KB"
+    if n < 1024 ** 3:
+        return f"{n / 1024 ** 2:.1f} MB"
+    return f"{n / 1024 ** 3:.1f} GB"
+
+
+def counters_text(stats: RunStats) -> str:
+    return (f"Downloaded {stats.downloaded}  |  Already there {stats.existing}  |  "
+            f"Skipped {stats.skipped}  |  Failed {stats.failed}  |  "
+            f"Retries {stats.retries}  |  Size {format_bytes(stats.bytes_done)}")
+
+
+def banner_text(stats: RunStats) -> str:
+    state = stats.state
+    if state == "waiting":
+        text = f"Waiting {int(_num(stats.wait_seconds))} s ({stats.wait_reason})."
+    elif state == "unavailable":
+        text = (f"Server unavailable: {stats.unavailable_message}. "
+                "Retrying automatically, or press Retry now.")
+    elif state == "paused":
+        text = "Paused. Press Resume to continue."
+    elif state == "stopping":
+        text = "Stopping..."
+    elif state == "running":
+        text = ""
+    else:
+        return ""
+    level = stats.adaptive_level
+    if _is_int(level) and level > 0 and state in ("running", "waiting", "paused"):
+        extra = f"Slowed down: level {level}."
+        text = f"{text} {extra}" if text else extra
+    return text
+
+
+def clean_log_line(line) -> str:
+    return re.sub(r"[:\s]+$", "", str(line))
+
+
+def progress_text(stats: RunStats, count) -> str:
+    fraction = progress_fraction(stats, count)
+    return "Working..." if fraction is None else f"{int(fraction * 100)}%"
+
+
+def query_text(job_config) -> str:
+    return _query.build_query(job_config.include, job_config.exclude,
+                              job_config.min_score, job_config.order, job_config.safety)
+
+
+def result_folder(job_config) -> Path:
+    if job_config.by_search:
+        sub = Path(job_config.dest) / _files.search_folder_name(job_config.include)
+        if sub.is_dir():
+            return sub
+    return Path(job_config.dest)
