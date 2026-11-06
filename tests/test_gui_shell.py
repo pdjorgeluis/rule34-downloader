@@ -1,4 +1,5 @@
 """GUI shell tests (offscreen). Skipped when PySide6 cannot be imported."""
+import atexit
 import hashlib
 import os
 import re
@@ -24,6 +25,23 @@ try:
     HAVE_QT = True
 except ImportError:
     HAVE_QT = False
+
+
+_QT_SETTINGS_DIR = None
+
+
+def redirect_qt_settings():
+    """Point Qt's user settings at a temp directory (once per process), so no GUI
+    test can read or write the real ~/.config/QtProject.conf. Returns that directory."""
+    global _QT_SETTINGS_DIR
+    if _QT_SETTINGS_DIR is None and HAVE_QT:
+        import shutil
+        from PySide6.QtCore import QSettings
+        path = tempfile.mkdtemp(prefix="qt-settings-")
+        atexit.register(shutil.rmtree, path, ignore_errors=True)
+        QSettings.setPath(QSettings.Format.NativeFormat, QSettings.Scope.UserScope, path)
+        _QT_SETTINGS_DIR = path
+    return _QT_SETTINGS_DIR
 
 
 def dispose(widget):
@@ -79,6 +97,7 @@ class TempConfigCase(unittest.TestCase):
 class GuiCase(TempConfigCase):
     @classmethod
     def setUpClass(cls):
+        redirect_qt_settings()
         from rule34_downloader.gui.app import create_app
         cls.app = create_app([])
 

@@ -7,10 +7,11 @@ when the dialog closes. Nothing typed here is saved anywhere.
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import urllib.parse
 
-from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QDir, QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
     QLineEdit, QListView, QPushButton, QVBoxLayout,
@@ -68,23 +69,52 @@ class _ShareLabels:
         QTimer.singleShot(0, self.apply)
 
 
+def _default_urls() -> list:
+    """Qt's own default side panel on Linux: Computer and Home."""
+    return [QUrl("file:"), QUrl.fromLocalFile(QDir.homePath())]
+
+
+def _distinct_mounts(mounts) -> list:
+    """One mount per path (first wins); the home folder is already in the panel."""
+    home = QDir.homePath().rstrip("/")
+    seen, out = set(), []
+    for m in mounts:
+        key = m.path.rstrip("/")
+        if key == home or key in seen:
+            continue
+        seen.add(key)
+        out.append(m)
+    return out
+
+
 def build_folder_dialog(parent, start_dir: str) -> QFileDialog:
     dlg = QFileDialog(parent, "Choose a folder", start_dir)
     dlg.setFileMode(QFileDialog.FileMode.Directory)
     # Avoid the native dialog: the GTK chooser can open larger than the screen and hide its confirm button.
     dlg.setOption(QFileDialog.Option.ShowDirsOnly, True)
     dlg.setOption(QFileDialog.Option.DontUseNativeDialog, True)
-    base = list(dlg.sidebarUrls())
+    linux = sys.platform.startswith("linux")
 
     labels = _ShareLabels(dlg)
     dlg._share_labels = labels
 
     def refresh() -> list:
         mounts = list_mounts()
-        labels.mounts = list(mounts)
-        dlg.setSidebarUrls(base + [QUrl.fromLocalFile(m.path) for m in mounts])
+        if not linux:
+            return mounts
+        # Never start from the dialog's current list: Qt restores saved shortcuts there.
+        shown = _distinct_mounts(mounts)
+        labels.mounts = shown
+        dlg.setSidebarUrls(_default_urls() + [QUrl.fromLocalFile(m.path) for m in shown])
         labels.apply()
         return mounts
+
+    def forget_mounts(*_ignored) -> None:
+        # Qt saves the side panel when the dialog is destroyed: leave it plain.
+        if linux:
+            dlg.setSidebarUrls(_default_urls())
+
+    dlg.finished.connect(forget_mounts)
 
     refresh()
     QTimer.singleShot(0, labels.apply)

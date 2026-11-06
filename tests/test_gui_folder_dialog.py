@@ -13,12 +13,13 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from test_gui_shell import GuiCase, HAVE_QT, dispose  # noqa: E402
+from test_gui_shell import GuiCase, HAVE_QT, dispose, redirect_qt_settings  # noqa: E402
 
 from rule34_downloader.network_mounts import Mount, MountResult  # noqa: E402
 
 if HAVE_QT:
     from PySide6.QtCore import Qt, QTimer, QUrl  # noqa: E402
+    from PySide6.QtCore import QSettings  # noqa: E402
     from PySide6.QtWidgets import (  # noqa: E402
         QApplication, QDialog, QDialogButtonBox, QFileDialog, QLineEdit, QListView,
     )
@@ -320,6 +321,76 @@ class FolderDialogCase(GuiCase):
         self.assertIs(folder_dialog.list_mounts, self.list_fake)
         self.assertIs(folder_dialog.find_gio, self.gio_fake)
         self.assertIs(folder_dialog.mount_share, self.mount_fake)
+
+
+    # --- card 6d: fixed side panel, never saved, settings redirected -------------
+
+    def qt_settings(self):
+        return QSettings(QSettings.Format.NativeFormat, QSettings.Scope.UserScope, "QtProject")
+
+    def clear_saved_dialog_state(self):
+        st = self.qt_settings()
+        st.remove("FileDialog")
+        st.sync()
+        self.addCleanup(lambda: (self.qt_settings().remove("FileDialog"), self.qt_settings().sync()))
+
+    def make_mount(self, name, label):
+        d = self.tmp / name
+        d.mkdir()
+        return Mount(label, f"smb://10.1.2.13/{name}/", str(d))
+
+    def test_settings_are_redirected_to_a_temp_dir_in_gui_tests(self):
+        name = self.qt_settings().fileName()
+        self.assertFalse(name.startswith(os.path.expanduser("~/.config")))
+        self.assertTrue(name.startswith(redirect_qt_settings()))
+
+    def test_sidebar_rows_stay_fixed_after_repeated_opens(self):
+        # 5 loops measured under 3 s on this machine
+        self.clear_saved_dialog_state()
+        two = [self.make_mount("one", "one on nas"), self.make_mount("two", "two on nas")]
+        self.list_fake.return_value = two
+        for _ in range(5):
+            dlg = self.build()
+            self.assertEqual(self.rows(dlg), ["Computer", os.path.basename(os.path.expanduser("~")),
+                                              "one on nas", "two on nas"])
+            self.assertEqual(len(dlg.sidebarUrls()), 4)
+            dispose(dlg)
+        dlg = self.build()
+        self.assertEqual(len(self.rows(dlg)), 4)
+
+    def test_stale_saved_shortcuts_are_ignored(self):
+        self.clear_saved_dialog_state()
+        st = self.qt_settings()
+        st.beginGroup("FileDialog")
+        st.setValue("shortcuts", [f"file:///junk/path{i}" for i in range(50)])
+        st.endGroup()
+        st.sync()
+        dlg = self.build()
+        self.assertEqual(len(self.rows(dlg)), 3)
+        self.assertEqual(len(dlg.sidebarUrls()), 3)
+
+    def test_mount_paths_are_not_saved_when_dialog_is_destroyed(self):
+        self.clear_saved_dialog_state()
+        dlg = self.build()
+        dlg.reject()
+        self.app.processEvents()
+        dispose(dlg)
+        st = self.qt_settings()
+        st.sync()
+        self.assertTrue(os.path.exists(st.fileName()), "Qt did not write its settings file")
+        saved = st.value("FileDialog/shortcuts")
+        self.assertTrue(saved, "Qt saved no shortcuts, so this check would prove nothing")
+        saved = [saved] if isinstance(saved, str) else list(saved)
+        self.assertIn("file:", saved)
+        for url in saved:
+            self.assertNotIn(self.mount.path.rstrip("/"), url)
+            self.assertNotIn("ai-data", url)
+
+    def test_duplicate_mounts_give_one_row(self):
+        self.list_fake.return_value = [self.mount, self.mount]
+        dlg = self.build()
+        self.assertEqual(len(self.rows(dlg)), 3)
+        self.assertEqual(self.rows(dlg).count(NAME), 1)
 
 
 if __name__ == "__main__":
