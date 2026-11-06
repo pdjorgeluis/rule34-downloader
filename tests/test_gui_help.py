@@ -1,6 +1,7 @@
 """Help tab and polish GUI tests (offscreen). Skipped without PySide6."""
 import os
 import re
+import sys
 import unittest
 from unittest import mock
 
@@ -13,7 +14,10 @@ try:
 except ImportError:
     HAVE_QT = False
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from rule34_downloader import help_content  # noqa: E402
+from test_gui_shell import dispose  # noqa: E402
 
 TEN = ["MINT", "WHITE", "BUTTON_GRAY", "BUTTON_BORDER", "LINK_BLUE", "TEXT",
        "TEAL_DARK", "TEAL_NEON", "ERROR_RED", "DISABLED_TEXT"]
@@ -29,7 +33,7 @@ class HelpGuiCase(unittest.TestCase):
     def tab(self, show=False):
         from rule34_downloader.gui.help_tab import HelpTab
         t = HelpTab()
-        self.addCleanup(t.close)
+        self.addCleanup(dispose, t)
         if show:
             t.resize(600, 300)
             t.show()
@@ -87,7 +91,7 @@ class HelpGuiCase(unittest.TestCase):
     def test_include_placeholder_mentions_the_underscore(self):
         from rule34_downloader.gui.search_form import SearchForm
         f = SearchForm()
-        self.addCleanup(f.close)
+        self.addCleanup(dispose, f)
         self.assertEqual(
             f.include_edit.placeholderText(),
             "tags to include, separated by spaces (use _ inside a tag, e.g. hyuuga_hinata)")
@@ -95,7 +99,7 @@ class HelpGuiCase(unittest.TestCase):
     def test_progress_chunk_uses_the_neon_color(self):
         from rule34_downloader.gui import theme
         bar = QProgressBar()
-        self.addCleanup(bar.close)
+        self.addCleanup(dispose, bar)
         bar.setRange(0, 100)
         bar.setValue(50)
         bar.resize(300, 30)

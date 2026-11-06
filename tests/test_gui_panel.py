@@ -9,7 +9,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from test_gui_shell import GuiCase, HAVE_QT  # noqa: E402
+from test_gui_shell import GuiCase, HAVE_QT, dispose  # noqa: E402
 
 from mock_api import API_KEY, USER_ID, MockServer  # noqa: E402
 from rule34_downloader import config, form_model  # noqa: E402
@@ -57,7 +57,7 @@ class PanelCase(GuiCase):
         w.runner.stop()
         w.runner.wait(10000)
         self.app.processEvents()
-        w.close()
+        dispose(w)
 
     def job(self, **kw):
         kw.setdefault("dest", self.tmp / "out")
@@ -498,7 +498,8 @@ class FlowTests(PanelCase):
         from rule34_downloader.gui.runner import JobRunner
         runner = JobRunner()
         panel = RunPanel(runner, fake_budget_factory)
-        self.addCleanup(panel.close)
+        self.addCleanup(dispose, runner)
+        self.addCleanup(dispose, panel)
         errors = []
         with mock.patch.object(sys, "excepthook", lambda *a: errors.append(a)):
             runner.log_line.emit("hello:")
@@ -576,7 +577,7 @@ class FlowTests(PanelCase):
             w = MainWindow(config_file=self.cfg, prefs_file=self.prefs,
                            budget_factory=fake_budget_factory)
         holder["w"] = w
-        self.addCleanup(w.close)
+        self.addCleanup(dispose, w)
         w.show()
         self.creds()
         w.search_form.include_edit.setText("cat")

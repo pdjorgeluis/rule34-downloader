@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.*=false;*.warning=false")
 
-from test_gui_shell import HAVE_QT  # noqa: E402
+from test_gui_shell import HAVE_QT, dispose  # noqa: E402
 
 if HAVE_QT:
     from PySide6.QtCore import QThread  # noqa: E402
@@ -89,6 +89,7 @@ class RunnerCase(unittest.TestCase):
         self.runner.stop()
         self.runner.wait(10000)
         self.app.processEvents()
+        dispose(self.runner)
 
     # -- helpers -----------------------------------------------------------------
     def cfg(self, **kw):

@@ -9,7 +9,7 @@ from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from test_gui_shell import GuiCase, HAVE_QT, close, hex_rgb  # noqa: E402
+from test_gui_shell import GuiCase, HAVE_QT, close, dispose, hex_rgb  # noqa: E402
 
 from rule34_downloader import form_model  # noqa: E402
 
@@ -23,7 +23,7 @@ class FormCase(GuiCase):
     def window(self):
         from rule34_downloader.gui.main_window import MainWindow
         w = MainWindow(config_file=self.cfg)
-        self.addCleanup(w.close)
+        self.addCleanup(dispose, w)
         w.show()
         self.app.processEvents()
         self.f = w.search_form
@@ -278,7 +278,7 @@ class FormTests(FormCase):
         self.f.count_all_radio.setChecked(True)
         self.f.start_button.click()
         w2 = MainWindow(config_file=self.cfg)
-        self.addCleanup(w2.close)
+        self.addCleanup(dispose, w2)
         g = w2.search_form
         self.assertEqual(g.include_edit.text(), "")
         self.assertEqual(g.folder_edit.text(), str(self.tmp / "dl"))
@@ -296,7 +296,7 @@ class FormTests(FormCase):
         explicit = self.tmp / "elsewhere" / "p.json"
         from rule34_downloader.gui.main_window import MainWindow
         w = MainWindow(config_file=self.cfg, prefs_file=explicit)
-        self.addCleanup(w.close)
+        self.addCleanup(dispose, w)
         self.assertEqual(w.prefs_file, explicit)
 
     def test_destination_label_shows_search_subfolder(self):

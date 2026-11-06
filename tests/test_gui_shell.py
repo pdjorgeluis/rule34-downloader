@@ -26,6 +26,22 @@ except ImportError:
     HAVE_QT = False
 
 
+def dispose(widget):
+    """Close and destroy a Qt object now, so no wrapper outlives its C++ object
+    until interpreter exit (PySide cleanup visits every live wrapper then)."""
+    if not HAVE_QT:
+        return
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from shiboken6 import isValid
+    if not isValid(widget):
+        return
+    if hasattr(widget, "close"):
+        widget.close()
+    widget.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    QCoreApplication.processEvents()
+
+
 def rgb(img, x, y):
     c = img.pixelColor(x, y)
     return (c.red(), c.green(), c.blue())
@@ -69,7 +85,7 @@ class GuiCase(TempConfigCase):
     def window(self):
         from rule34_downloader.gui.main_window import MainWindow
         w = MainWindow(config_file=self.cfg)
-        self.addCleanup(w.close)
+        self.addCleanup(dispose, w)
         w.show()
         self.app.processEvents()
         return w
@@ -77,7 +93,7 @@ class GuiCase(TempConfigCase):
     def dialog(self):
         from rule34_downloader.gui.settings_dialog import SettingsDialog
         d = SettingsDialog(config_file=self.cfg)
-        self.addCleanup(d.close)
+        self.addCleanup(dispose, d)
         d.show()
         self.app.processEvents()
         return d
@@ -188,7 +204,7 @@ class WindowTests(GuiCase):
         self.assertEqual(msg, "Account: 4242 - key saved")
         self.assertNotIn(FAKE_KEY, msg)
         d = w.open_settings(modal=False)
-        self.addCleanup(d.close)
+        self.addCleanup(dispose, d)
         d.user_id_edit.setText("777")
         d.key_edit.setText("z" * 20)
         d.save_button.click()
