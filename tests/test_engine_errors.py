@@ -280,6 +280,24 @@ class AdaptiveBudgetTests(ErrBase):
         self.assertEqual((w["reason"], w["seconds"], w["attempt"]), ("budget", 3600.0, 1))
         self.assertEqual(s.waited_seconds, 3600.0)
 
+    def test_workers_100_stop_during_budget_wait(self):
+        budget = RequestBudget(limit=1, path=self.tmp / "state.json",
+                               waiter=lambda wait, stop: not stop.wait(wait))
+        budget.acquire()                      # budget now at its limit: the engine must wait
+        before = threading.active_count()
+        job = self.make(count=None, workers=100, budget=budget)
+        out = []
+        th = threading.Thread(target=lambda: out.append(job.run()))
+        th.start()
+        time.sleep(0.3)
+        t0 = time.monotonic()
+        job.stop()
+        th.join(5)
+        self.assertFalse(th.is_alive())
+        self.assertLess(time.monotonic() - t0, 2)
+        self.assertEqual(out[0].reason, "stopped")
+        self.assertLessEqual(threading.active_count(), before)
+
     def test_job_file_downloads_not_counted_in_budget(self):
         budget = RequestBudget(limit=10, path=self.tmp / "state.json")
         s = self.make(count=3, budget=budget).run()

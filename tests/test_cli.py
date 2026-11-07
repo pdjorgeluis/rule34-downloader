@@ -88,7 +88,7 @@ class CliTests(unittest.TestCase):
 
     def test_cli_bad_option_exit_2(self):
         env = {"R34_CONFIG": str(self.tmp / "none.json")}
-        for argv in (["cat", "--workers", "6", "--dry-run"],
+        for argv in (["cat", "--workers", "101", "--dry-run"],
                      ["cat", "--bogus"],
                      ["cat", "-n", "0", "--dry-run"],
                      ["cat", "--types", "audio", "--dry-run"],

@@ -61,8 +61,8 @@ class JobConfig:
         ):
             raise ValueError("count must be an int >= 1 (or None for all)")
         if isinstance(self.workers, bool) or not isinstance(self.workers, int) \
-                or not 1 <= self.workers <= 5:
-            raise ValueError("workers must be an int from 1 to 5")
+                or not 1 <= self.workers <= 100:
+            raise ValueError("workers must be an int from 1 to 100")
 
 
 @dataclass

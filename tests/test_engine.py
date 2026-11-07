@@ -166,6 +166,17 @@ class EngineTests(EngineBase):
         self.assertEqual(sorted(self.srv.file_log), list(range(1, 26)))
         self.assertEqual(len(self.kinds("file_done")), 25)
 
+    def test_workers_100_download_all_without_duplicates(self):
+        s = self.make(types=ALL, workers=100).run()
+        self.assertEqual(s.downloaded, 25)
+        self.assertEqual(sorted(self.srv.file_log), list(range(1, 26)))
+        self.assertEqual(len(self.kinds("file_done")), 25)
+
+    def test_workers_boundary_100_ok_101_rejected(self):
+        self.assertEqual(JobConfig(include=["cat"], dest=self.tmp, workers=100).workers, 100)
+        with self.assertRaisesRegex(ValueError, "workers must be an int from 1 to 100"):
+            JobConfig(include=["cat"], dest=self.tmp, workers=101)
+
     def test_workers_never_exceed_count(self):
         self.srv.slow = 0.05
         s = self.make(count=3, workers=5).run()
@@ -182,7 +193,7 @@ class EngineTests(EngineBase):
         self.assertLessEqual(self.srv.max_active, 4)
 
     def test_workers_out_of_range_rejected(self):
-        for w in (0, 6, -1):
+        for w in (0, 101, -1):
             with self.assertRaises(ValueError):
                 JobConfig(include=["cat"], dest=self.tmp, workers=w)
 
