@@ -31,8 +31,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--types", default="pictures", help="comma list of pictures,gifs,videos")
     p.add_argument("-o", "--output", default="./downloads")
     p.add_argument("--no-search-folder", action="store_true")
-    p.add_argument("--workers", type=int, default=1)
-    p.add_argument("--page-size", type=int, default=100)
+    p.add_argument("--workers", type=int, default=5)
+    p.add_argument("--page-size", type=int, default=1000)
     p.add_argument("--safety-exclude", action="store_true")
     p.add_argument("--delay", type=float, default=0.5)
     p.add_argument("--api-per-hour", type=int, default=55,

@@ -120,6 +120,13 @@ class CliTests(unittest.TestCase):
         self.assertIn("error: disk full", err)
         self.assertNotIn(API_KEY, out + err)
 
+    def test_cli_parser_defaults_are_5_workers_and_1000_page_size(self):
+        from rule34_downloader.cli import build_parser
+        a = build_parser().parse_args(["cat"])
+        self.assertEqual((a.workers, a.page_size), (5, 1000))
+        a = build_parser().parse_args(["cat", "--workers", "1", "--page-size", "100"])
+        self.assertEqual((a.workers, a.page_size), (1, 100))
+
 
 if __name__ == "__main__":
     unittest.main()

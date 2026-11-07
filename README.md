@@ -111,8 +111,8 @@ Options:
 - `--types`: a comma list of `pictures`, `gifs`, `videos`. The default is `pictures`.
 - `-o`, `--output`: the folder for the files. The default is `./downloads`.
 - `--no-search-folder`: do not create a folder per search.
-- `--workers`: how many files download at the same time. The default is 1.
-- `--page-size`: how many posts one request asks for. The default is 100.
+- `--workers`: how many files download at the same time. The default is 5.
+- `--page-size`: how many posts one request asks for. The default is 1000.
 - `--safety-exclude`: exclude loli, shota, child, toddler and underage.
 - `--delay`: seconds to wait between downloads. The default is 0.5.
 - `--api-per-hour`: the API request budget per hour. The default is 55.

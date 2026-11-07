@@ -212,6 +212,14 @@ class DocsTests(unittest.TestCase):
             "The kind of error follows in brackets, then the message.", body)
         self.assertNotIn("The reason follows in brackets.", body)
 
+    def test_readme_cli_defaults_match_the_parser(self):
+        from rule34_downloader.cli import build_parser
+        a = build_parser().parse_args(["cat"])
+        text = (Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8")
+        for flag, value in (("--workers", a.workers), ("--page-size", a.page_size)):
+            line = next(l for l in text.splitlines() if l.startswith(f"- `{flag}`"))
+            self.assertEqual(int(re.search(r"The default is (\d+)\.", line).group(1)), value)
+
 
 if __name__ == "__main__":
     unittest.main()
