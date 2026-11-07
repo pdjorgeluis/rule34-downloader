@@ -155,11 +155,11 @@ class FormTests(FormCase):
         self.assertFalse(self.f.start_button.isEnabled())
         self.assertEqual(self.f.error_label.text(), "Choose at least one file type.")
 
-    def test_workers_spin_range_is_1_to_5(self):
+    def test_workers_spin_range_is_1_to_100(self):
         self.window()
-        self.assertEqual((self.f.workers_spin.minimum(), self.f.workers_spin.maximum()), (1, 5))
-        self.f.workers_spin.setValue(9)
-        self.assertEqual(self.f.workers_spin.value(), 5)
+        self.assertEqual((self.f.workers_spin.minimum(), self.f.workers_spin.maximum()), (1, 100))
+        self.f.workers_spin.setValue(999)
+        self.assertEqual(self.f.workers_spin.value(), 100)
 
     def test_browse_sets_folder(self):
         self.window()

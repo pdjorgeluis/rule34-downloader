@@ -65,7 +65,7 @@ class SearchForm(QWidget):
         self._count_group.addButton(self.count_number_radio)
         self._count_group.addButton(self.count_all_radio)
         self.workers_spin = _name(QSpinBox(), "workers_spin")
-        self.workers_spin.setRange(1, 5)
+        self.workers_spin.setRange(1, 100)
         self.safety_check = _name(
             QCheckBox("Exclude loli, shota, child, toddler, underage"), "safety_check")
         self.subfolder_check = _name(
