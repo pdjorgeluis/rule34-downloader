@@ -78,7 +78,7 @@ The Download tab holds the search form:
 - An optional minimum score, and Newest or Oldest.
 - File types: Pictures, GIFs, Videos.
 - A number of files, or All.
-- Parallel workers, from 1 to 5.
+- Parallel workers, from 1 to 100.
 - An optional safety checkbox. It adds exclusions for loli, shota, child, toddler and underage. It is off by default.
 - A folder, with Browse and New folder buttons.
 

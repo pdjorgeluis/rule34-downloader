@@ -96,7 +96,7 @@ class HelpContentTests(unittest.TestCase):
     def test_messages_section_covers_validation_messages(self):
         check(self, "Messages and what they mean",
               ["Enter at least one tag.", "Choose at least one file type.",
-               "Workers must be between 1 and 5.", "The number of files must be at least 1.",
+               "Workers must be between 1 and 100.", "The number of files must be at least 1.",
                "Choose a folder.", "That folder path is a file.",
                "tag in both include and exclude", "No account saved", "Account:",
                "Finished:", "Stopped:", "Stopped by an error", "Missing authentication"])

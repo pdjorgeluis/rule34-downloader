@@ -44,7 +44,7 @@ Download stays disabled until the count matches your tags. If you change the inc
 - Newest or Oldest: which posts come first.
 - Pictures, GIFs, Videos: tick the kinds of files you want.
 - Number of files: how many files to download. Choose All to download everything that matches.
-- Parallel workers: how many files download at the same time, from 1 to 5. Fewer workers are gentler on the site.
+- Parallel workers: how many files download at the same time, from 1 to 100. Fewer workers are gentler on the site.
 - The safety checkbox adds exclusions for these tags: loli, shota, child, toddler, underage. It is off by default."""),
 
     ("Where files are saved", """\
@@ -91,7 +91,7 @@ Messages under the form when something is missing:
 
 - Enter at least one tag.
 - Choose at least one file type.
-- Workers must be between 1 and 5.
+- Workers must be between 1 and 100.
 - The number of files must be at least 1.
 - Choose a folder.
 - That folder path is a file.
