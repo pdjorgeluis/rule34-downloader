@@ -34,9 +34,9 @@ class ModelTests(unittest.TestCase):
     def test_validate_requires_include_tag(self):
         self.assertEqual(fm.validate(V(include_text=" , ")), ["Enter at least one tag."])
         # first error only: tag rule outranks type, workers and folder rules
-        v = V(include_text="", types=frozenset(), workers=9, folder="")
+        v = V(include_text="", types=frozenset(), workers=101, folder="")
         self.assertEqual(fm.validate(v), ["Enter at least one tag."])
-        v = V(types=frozenset(), workers=9, folder="")
+        v = V(types=frozenset(), workers=101, folder="")
         self.assertEqual(fm.validate(v), ["Choose at least one file type."])
 
     def test_validate_reports_tag_in_both_lists(self):
@@ -58,10 +58,23 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(fm.validate(V(types=frozenset({"bmp"}))), ["Choose at least one file type."])
 
     def test_validate_rejects_workers_out_of_range(self):
-        msg = ["Workers must be between 1 and 5."]
-        for w in (0, 6, True, "3"):
+        msg = ["Workers must be between 1 and 100."]
+        for w in (0, 101, True, "3"):
             self.assertEqual(fm.validate(V(workers=w)), msg, w)
-        self.assertEqual(fm.validate(V(workers=5)), [])
+        self.assertEqual(fm.validate(V(workers=100)), [])
+
+    def test_validate_workers_boundary_100(self):
+        self.assertEqual(fm.validate(V(workers=1)), [])
+        self.assertEqual(fm.validate(V(workers=100)), [])
+        self.assertEqual(fm.validate(V(workers=101)), ["Workers must be between 1 and 100."])
+
+    def test_prefs_workers_100_round_trip(self):
+        v = V(workers=100)
+        self.assertEqual(fm.prefs_from_dict(fm.prefs_to_dict(v)).workers, 100)
+
+    def test_prefs_workers_out_of_range_falls_back_to_default(self):
+        for w in (101, 0, -1, True, "5"):
+            self.assertEqual(fm.prefs_from_dict({"workers": w}).workers, 3, w)
 
     def test_validate_rejects_count_below_one_in_number_mode(self):
         self.assertEqual(fm.validate(V(count=0)), ["The number of files must be at least 1."])
@@ -169,7 +182,7 @@ class ModelTests(unittest.TestCase):
     def test_prefs_bad_values_fall_back_per_field(self):
         got = fm.prefs_from_dict({
             "order": "sideways", "types": ["pictures", "bmp"], "count_mode": "most",
-            "count": 0, "folder": "", "by_search": "yes", "workers": 9, "safety": 1,
+            "count": 0, "folder": "", "by_search": "yes", "workers": 101, "safety": 1,
             "min_score": 100000,
         })
         self.assertEqual(got, FormValues(folder=fm.default_folder()))

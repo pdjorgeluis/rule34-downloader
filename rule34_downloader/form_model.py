@@ -63,8 +63,8 @@ def validate(v: FormValues) -> list[str]:
         bad_types = True
     if bad_types:
         return ["Choose at least one file type."]
-    if not _is_int(v.workers) or not 1 <= v.workers <= 5:
-        return ["Workers must be between 1 and 5."]
+    if not _is_int(v.workers) or not 1 <= v.workers <= 100:
+        return ["Workers must be between 1 and 100."]
     if v.count_mode == "number" and (not _is_int(v.count) or v.count < 1):
         return ["The number of files must be at least 1."]
     if not v.folder or not v.folder.strip():
@@ -170,7 +170,7 @@ def prefs_from_dict(d) -> FormValues:
         if isinstance(d.get(key), bool):
             setattr(out, key, d[key])
     w = d.get("workers")
-    if _is_int(w) and 1 <= w <= 5:
+    if _is_int(w) and 1 <= w <= 100:
         out.workers = w
     m = d.get("min_score")
     if _is_int(m) and 0 <= m <= 99999:
