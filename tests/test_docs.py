@@ -76,6 +76,12 @@ class DocsTests(unittest.TestCase):
             self.assertIn(".part", doc, name)
             self.assertIn("7 days", doc, name)
 
+    def test_readme_project_layout_lists_every_module(self):
+        layout = text(README).split("## Project layout", 1)[1].split("\n## ", 1)[0]
+        for mod in sorted((ROOT / "rule34_downloader").glob("*.py")):
+            if mod.name not in ("__init__.py", "__main__.py"):
+                self.assertIn(mod.name, layout, mod.name)
+
     def test_build_md_has_the_required_sections_in_order(self):
         md = text(BUILD_MD)
         self.assertEqual(headings(md, 1), ["Building Rule34 Downloader"])

@@ -197,7 +197,8 @@ README.md, BUILD.md
 requirements.txt, requirements-gui.txt, requirements-build.txt
 rule34_downloader/
     api.py, backoff.py, budget.py, cli.py, config.py, engine.py,
-    errors.py, files.py, form_model.py, help_content.py, query.py,
+    errors.py, files.py, form_model.py, help_content.py,
+    network_mounts.py (Linux shares through gio), query.py,
     resilience.py, run_model.py, version.py
     gui/        the window (PySide6)
 packaging/      icons, PyInstaller spec, Linux install scripts
