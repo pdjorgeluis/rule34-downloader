@@ -576,6 +576,66 @@ class ExistingCheckTests(unittest.TestCase):
                          ["7.jpg", "7.jpg.part", "7.jpg.part.meta"])
 
 
+class _PagedClient(_ListClient):
+    """One post per page; page_size=1 makes the job walk every page."""
+    def __init__(self, ids):
+        super().__init__([])
+        self.ids = ids
+
+    def fetch_posts(self, q, n, pid):
+        if pid >= len(self.ids):
+            return []
+        i = self.ids[pid]
+        return [{"id": i, "file_url": f"http://h.invalid/{i}.jpg"}]
+
+
+class OrphanSweepTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
+        self.pics = self.tmp / "cat" / "pictures"
+        self.pics.mkdir(parents=True)
+        old = time.time() - 8 * 24 * 3600
+        for name in ("9.jpg.part", "9.jpg.part.meta", "9.jpg.part.lock"):
+            (self.pics / name).write_bytes(b"x")
+            os.utime(self.pics / name, (old, old))
+
+    def run_job(self, stop_after_first=False, **kw):
+        cfg = JobConfig(include=["cat"], dest=self.tmp, delay=0, page_size=1, **kw)
+        job = Job(cfg, _PagedClient([1, 2, 3]))
+
+        def download(url, dest):
+            if stop_after_first:
+                job.stop()
+            return 5
+        with mock.patch.object(Job, "_download", side_effect=download):
+            return job.run()
+
+    def left(self):
+        return sorted(p.name for p in self.pics.iterdir())
+
+    def test_job_sweeps_only_after_end_of_results(self):
+        stale = ["9.jpg.part", "9.jpg.part.lock", "9.jpg.part.meta"]
+        s = self.run_job(count=1)
+        self.assertEqual(s.reason, "count_reached")
+        self.assertEqual(self.left(), stale)
+        s = self.run_job(stop_after_first=True)
+        self.assertEqual(s.reason, "stopped")
+        self.assertEqual(self.left(), stale)
+        s = self.run_job()
+        self.assertEqual(s.reason, "end_of_results")
+        self.assertEqual(self.left(), [])
+
+    def test_sweep_after_end_of_results_keeps_parts_of_seen_posts(self):
+        for name in ("2.jpg.part", "2.jpg.part.meta"):
+            (self.pics / name).write_bytes(b"x")
+            os.utime(self.pics / name, (1, 1))
+        s = self.run_job()
+        self.assertEqual(s.reason, "end_of_results")
+        self.assertEqual(self.left(), ["2.jpg.part", "2.jpg.part.meta"])
+
+
 class KnownTotalTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
