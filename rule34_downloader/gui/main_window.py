@@ -140,7 +140,9 @@ class MainWindow(QMainWindow):
             return
         if self.runner.is_running():
             return
-        self.run_panel.begin(job_config, found_total=self.search_form.found_total())
+        found = self.search_form.found_total()
+        job_config.known_total = found      # the search already counted: no re-count
+        self.run_panel.begin(job_config, found_total=found)
         self.runner.start(job_config, creds, self.job_factory)
         del creds
         self.download_stack.setCurrentIndex(1)
