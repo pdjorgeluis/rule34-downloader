@@ -264,6 +264,7 @@ class PanelTests(PanelCase):
         self.panel.begin(self.job())
         self.assertTrue(self.panel.banner.isHidden())
         self.drive("waiting", wait_seconds=12.7, wait_reason="retry-after")
+        self.settle()
         self.assertFalse(self.panel.banner.isHidden())
         self.assertEqual(self.panel.banner.text(), "Waiting 12 s (retry-after).")
         self.drive("running")
