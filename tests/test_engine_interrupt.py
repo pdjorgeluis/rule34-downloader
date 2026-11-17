@@ -169,5 +169,51 @@ class PauseTests(InterruptBase):
         self.assertNotIn("retry", self.events)
 
 
+class AbortResponseTests(unittest.TestCase):
+    def test_abort_response_from_100_threads_is_harmless(self):
+        import requests
+        from rule34_downloader.engine import _abort_response
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Length", "10000000")
+                self.end_headers()
+                try:
+                    for _ in range(10000):
+                        self.wfile.write(b"x" * 1000)
+                        time.sleep(0.001)
+                except Exception:
+                    pass
+
+            def log_message(self, *a):
+                pass
+
+        srv = socketserver.ThreadingTCPServer(("127.0.0.1", 0), H)
+        srv.daemon_threads = True
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.server_close)
+        self.addCleanup(srv.shutdown)
+        resp = requests.get(f"http://127.0.0.1:{srv.server_address[1]}/",
+                            stream=True, timeout=(5, 5))
+        self.addCleanup(resp.close)
+        errors = []
+
+        def closer():
+            try:
+                for _ in range(5):
+                    _abort_response(resp)
+            except BaseException as e:      # noqa: BLE001 - pinning: nothing escapes
+                errors.append(repr(e))
+
+        threads = [threading.Thread(target=closer) for _ in range(100)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(10)
+        self.assertEqual(errors, [])
+        self.assertEqual([t for t in threads if t.is_alive()], [])
+
+
 if __name__ == "__main__":
     unittest.main()
