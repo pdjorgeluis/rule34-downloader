@@ -169,6 +169,7 @@ class JobConfig:
     delay: float = 0.5
     unavailable_policy: str = "stop"
     auto_retry_seconds: Optional[float] = None
+    known_total: Optional[int] = None   # post count already fetched (GUI search)
 
     def __post_init__(self):
         if self.unavailable_policy not in POLICIES:
@@ -359,7 +360,10 @@ class Job:
         if self._stop.is_set() or not self._wait_gate():
             self._emit("started", {"query": self._query, "total": None})
             return "stopped"
-        if cfg.count is None:
+        kt = cfg.known_total
+        if cfg.count is None and isinstance(kt, int) and not isinstance(kt, bool) and kt > 0:
+            s.total = kt                 # already counted by the search: no request
+        elif cfg.count is None:
             try:
                 s.total = self._rc.total_count(self._query)
             except Stopped:
