@@ -116,6 +116,12 @@ The script builds with PyInstaller and then smoke-tests the exe. A windowed Wind
 
 In Windows PowerShell 5.1, `Compress-Archive` can fail on very long paths. Build in a short folder path if it does.
 
+### Build it from Linux with GitHub Actions
+
+PyInstaller cannot cross-compile, so the Windows exe is built on a Windows runner. The workflow `.github/workflows/build-windows.yml` sets up Python 3.14, installs `requirements-build.txt`, runs the tests (informational), runs `scripts\build-windows.ps1` (build, `--screenshot` smoke test, zip) and uploads the zip as the artifact `rule34-downloader-windows`, plus `smoke.png` as `smoke-screenshot`.
+
+Start it from the Actions tab (Build Windows > Run workflow) or by pushing a tag `v*`. Download the artifact, unzip it and run `rule34-downloader\rule34-downloader.exe`.
+
 ## Release checklist
 
 1. Bump the version in `rule34_downloader/version.py`.
