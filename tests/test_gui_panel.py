@@ -99,6 +99,10 @@ class PanelCase(GuiCase):
         self.app.processEvents()
         return bool(cond())
 
+    def settle(self):
+        """Let the 100 ms redraw-coalescing tick fire."""
+        self.assertTrue(self.pump(lambda: not self.panel._stats_timer.isActive(), timeout=2))
+
     def drive(self, state, **fields):
         """Push a runner state through the public signals."""
         for k, v in fields.items():
@@ -182,6 +186,7 @@ class PanelTests(PanelCase):
         self.panel.begin(self.job())
         self.runner.stats.state = "running"
         self.runner.stats_changed.emit()
+        self.settle()
         bar = self.panel.progress_bar
         self.assertEqual((bar.minimum(), bar.maximum()), (0, 0))
 
@@ -200,6 +205,7 @@ class PanelTests(PanelCase):
         self.runner.stats.downloaded = 2
         self.runner.stats.bytes_done = 2048
         self.runner.stats_changed.emit()
+        self.settle()
         self.assertEqual(self.panel.counters_label.text(), counters_text(self.runner.stats))
         self.assertIn("Downloaded 2", self.panel.counters_label.text())
         self.assertIn("Size 2.0 KB", self.panel.counters_label.text())
@@ -261,6 +267,7 @@ class PanelTests(PanelCase):
         self.assertFalse(self.panel.banner.isHidden())
         self.assertEqual(self.panel.banner.text(), "Waiting 12 s (retry-after).")
         self.drive("running")
+        self.settle()
         self.assertTrue(self.panel.banner.isHidden())
         self.drive("paused", adaptive_level=2)
         self.assertEqual(self.panel.banner.text(),

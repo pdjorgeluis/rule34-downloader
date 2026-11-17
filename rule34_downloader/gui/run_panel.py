@@ -16,6 +16,8 @@ from ..run_model import (
 
 ACTIVE = ("running", "waiting", "paused", "unavailable", "stopping")
 BUDGET_MS = 5000
+STATS_MS = 100
+IMMEDIATE_STATES = ("finished", "paused", "stopping", "unavailable")
 
 
 def _default_budget():
@@ -91,6 +93,13 @@ class RunPanel(QWidget):
         self.budget_timer.setInterval(BUDGET_MS)
         self.budget_timer.timeout.connect(self.refresh_budget)
 
+        self._dirty = False
+        self._stats_timer = QTimer(self)
+        self._stats_timer.setObjectName("stats_timer")
+        self._stats_timer.setSingleShot(True)
+        self._stats_timer.setInterval(STATS_MS)
+        self._stats_timer.timeout.connect(self._flush_stats)
+
         runner.log_line.connect(self._on_log_line)
         runner.stats_changed.connect(self._on_stats_changed)
         runner.state_changed.connect(self._on_state_changed)
@@ -147,6 +156,18 @@ class RunPanel(QWidget):
         self.log_view.appendPlainText(clean_log_line(line))
 
     def _on_stats_changed(self) -> None:
+        # Coalesce: mark dirty, redraw at most once per STATS_MS.
+        self._dirty = True
+        if not self._stats_timer.isActive():
+            self._stats_timer.start()
+
+    def _flush_stats(self) -> None:
+        if self._dirty:
+            self._apply_stats()
+
+    def _apply_stats(self) -> None:
+        self._dirty = False
+        self._stats_timer.stop()
         stats = self.runner.stats
         self.counters_label.setText(counters_text(stats))
         text = banner_text(stats)
@@ -155,7 +176,11 @@ class RunPanel(QWidget):
         self._update_progress(stats)
         self._set_buttons(stats.state)
 
-    def _on_state_changed(self, _state) -> None:
+    def _on_state_changed(self, state) -> None:
+        if state in IMMEDIATE_STATES:
+            self._apply_stats()
+            self.refresh_budget()
+            return
         stats = self.runner.stats
         self._update_progress(stats)
         self._set_buttons(stats.state)
@@ -165,6 +190,8 @@ class RunPanel(QWidget):
         if self._done:
             return
         self._done = True
+        self._dirty = False
+        self._stats_timer.stop()
         self.budget_timer.stop()
         stats = self.runner.stats
         fraction = progress_fraction(stats, self._count)
