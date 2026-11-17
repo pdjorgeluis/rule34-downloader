@@ -277,6 +277,75 @@ class PanelTests(PanelCase):
 
 
 @unittest.skipUnless(HAVE_QT, "PySide6 not installed")
+class CoalescingTests(PanelCase):
+    def _counting_panel(self):
+        self.window()
+        self.panel.begin(self.job(count=2000))
+        calls = []
+        real = self.panel._apply_stats
+        self.panel._apply_stats = lambda: (calls.append(1), real())[1]
+        return calls
+
+    def test_1000_events_in_1s_cause_at_most_11_redraws(self):
+        calls = self._counting_panel()
+        timer = self.panel._stats_timer
+        self.assertTrue(timer.isSingleShot())
+        self.assertEqual(timer.interval(), 100)
+        self.runner.stats.state = "running"
+        for i in range(1000):
+            self.runner.stats.downloaded = i + 1
+            self.runner.stats_changed.emit()
+            if (i + 1) % 100 == 0 and timer.isActive():
+                timer.timeout.emit()  # one 100 ms tick of simulated time
+        self.assertGreaterEqual(len(calls), 1)
+        self.assertLessEqual(len(calls), 11)
+
+    def test_terminal_states_apply_immediately(self):
+        for state in ("finished", "paused", "stopping", "unavailable"):
+            with self.subTest(state=state):
+                self.window()
+                self.panel.begin(self.job())
+                stats = self.runner.stats
+                stats.downloaded = 5
+                stats.unavailable_message = "HTTP 503"
+                stats.state = state
+                self.runner.state_changed.emit(state)  # no stats_changed, no timer tick
+                self.assertEqual(self.panel.counters_label.text(), counters_text(stats))
+                self.assertIn("Downloaded 5", self.panel.counters_label.text())
+                actions = enabled_actions(state)
+                self.assertEqual(self.panel.resume_button.isEnabled(), "resume" in actions)
+                self.assertEqual(self.panel.stop_button.isEnabled(), "stop" in actions)
+                if state != "finished":
+                    self.assertFalse(self.panel.banner.isHidden())
+                    self.assertTrue(self.panel.banner.text())
+
+    def test_on_finished_applies_immediately(self):
+        self.window()
+        self.panel.begin(self.job())
+        self.runner.stats.downloaded = 3
+        self.runner.stats_changed.emit()  # pending, not yet drawn
+        self.runner.stats.state = "finished"
+        self.runner.finished.emit(Summary(reason="stopped", downloaded=3))
+        self.assertIn("Downloaded 3", self.panel.counters_label.text())
+
+    def test_final_counters_are_exact_after_burst(self):
+        self.window()
+        self.panel.begin(self.job())
+        stats = self.runner.stats
+        stats.state = "running"
+        for i in range(500):
+            stats.downloaded = i + 1
+            stats.bytes_done = (i + 1) * 1024
+            self.runner.stats_changed.emit()
+        self.finish(Summary(reason="stopped", downloaded=500))
+        self.assertEqual(self.panel.counters_label.text(), counters_text(stats))
+        self.assertIn("Downloaded 500", self.panel.counters_label.text())
+        # and nothing changes when a pending tick fires later
+        self.pump(lambda: False, timeout=0.3)
+        self.assertEqual(self.panel.counters_label.text(), counters_text(stats))
+
+
+@unittest.skipUnless(HAVE_QT, "PySide6 not installed")
 class FlowTests(PanelCase):
     # -- result ------------------------------------------------------------------
     def test_result_label_shows_headline_when_finished(self):
