@@ -1,7 +1,9 @@
 """File classification and folder layout (pure)."""
 from __future__ import annotations
 
+import os
 import re
+import time
 from pathlib import Path
 from typing import Iterable
 
@@ -49,6 +51,47 @@ def dest_path(base, include, kind, post_id, ext, by_search=True) -> Path:
     if by_search:
         root = root / search_folder_name(include)
     return root / kind / f"{post_id}.{e}"
+
+
+ORPHAN_AGE = 7 * 24 * 3600   # seconds
+
+
+def _post_id_of(name: str):
+    """Post id from '<id>.<ext>.part' / '<id>.<ext>.part.meta' (else None)."""
+    stem = name.split(".", 1)[0]
+    return stem or None
+
+
+def list_folder(folder, active_ids=(), now=None, max_age=ORPHAN_AGE) -> set:
+    """One os.scandir of a <kind> folder: the set of names that are complete
+    (size > 0, no .part suffix). Stale .part / .part.meta files (mtime older
+    than max_age) of posts not in active_ids are deleted on the way."""
+    now = time.time() if now is None else now
+    active = {str(i) for i in active_ids}
+    done = set()
+    try:
+        it = os.scandir(folder)
+    except OSError:
+        return done
+    with it:
+        for e in it:
+            try:
+                if not e.is_file():
+                    continue
+                name = e.name
+                st = e.stat()
+                if name.endswith((".part", ".part.meta")):
+                    if (now - st.st_mtime > max_age
+                            and _post_id_of(name) not in active):
+                        try:
+                            os.unlink(e.path)
+                        except OSError:
+                            pass
+                elif st.st_size > 0:
+                    done.add(name)
+            except OSError:
+                continue
+    return done
 
 
 def is_complete(path) -> bool:

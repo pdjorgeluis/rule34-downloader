@@ -561,6 +561,20 @@ class ExistingCheckTests(unittest.TestCase):
         self.assertEqual(sorted(scans), sorted([str(pics), str(vids)]))
         self.assertEqual(stats, [])
 
+    def test_job_listing_cleans_stale_part_files_but_not_the_pages_posts(self):
+        pics = self.tmp / "cat" / "pictures"
+        pics.mkdir(parents=True)
+        old = time.time() - 8 * 24 * 3600
+        for name in ("7.jpg", "7.jpg.part", "7.jpg.part.meta",
+                     "8.jpg.part", "8.jpg.part.meta"):
+            (pics / name).write_bytes(b"x")
+            os.utime(pics / name, (old, old))
+        cfg = JobConfig(include=["cat"], dest=self.tmp, delay=0, count=10)
+        posts = [{"id": 7, "file_url": "http://h.invalid/7.jpg"}]
+        Job(cfg, _ListClient(posts)).run()
+        self.assertEqual(sorted(p.name for p in pics.iterdir()),
+                         ["7.jpg", "7.jpg.part", "7.jpg.part.meta"])
+
 
 if __name__ == "__main__":
     unittest.main()

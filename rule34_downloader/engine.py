@@ -23,7 +23,7 @@ except ImportError:      # non-POSIX: the in-process lock only
 from .api import ApiClient, ApiError
 from .backoff import Backoff, GiveUpClock
 from .errors import PermanentError, TemporaryError, classify_exception
-from .files import classify, dest_path, ext_from_url, is_complete
+from .files import classify, dest_path, ext_from_url, list_folder
 from .query import build_query
 from .resilience import (
     Adaptive, ResilientClient, StartLimiter, Stopped, StopEvent, ThrottleGate,
@@ -234,6 +234,9 @@ class Job:
         self._active = set()             # responses being read, guarded by _active_lock
         self._active_lock = threading.Lock()
         self._pause_epoch = 0
+        self._listings = {}              # folder -> set of complete names
+        self._list_lock = threading.Lock()
+        self._page_ids = frozenset()     # post ids of the page being handled
         self._finished = False
         self.summary = Summary()
         self._rc = ResilientClient(
@@ -412,6 +415,7 @@ class Job:
             if not posts:
                 return "end_of_results"
             s.pages += 1
+            self._page_ids = frozenset(str(p.get("id")) for p in posts)
             self._emit("page", {"pid": pid, "posts": len(posts)})
             for post in posts:
                 outcome = self._handle_post(post, seen, executor)
@@ -477,7 +481,7 @@ class Job:
             self._emit("file_skipped", {"id": post.get("id"), "ext": ext})
             return None
         dest = dest_path(cfg.dest, cfg.include, kind, post.get("id"), ext, cfg.by_search)
-        if is_complete(dest):
+        if self._is_existing(dest):
             with self._cond:
                 s.existing += 1
             self._emit("file_existing", {"id": post.get("id")})
@@ -498,6 +502,16 @@ class Job:
         fut = executor.submit(self._download_task, post.get("id"), url, kind, dest)
         fut.add_done_callback(self._task_done)
         return None
+
+    def _is_existing(self, dest: Path) -> bool:
+        """Already complete? One directory listing per folder per job (made at
+        first use, never refreshed); files this job writes are added to it."""
+        with self._list_lock:
+            names = self._listings.get(dest.parent)
+            if names is None:
+                names = self._listings[dest.parent] = list_folder(
+                    dest.parent, active_ids=self._page_ids)
+            return dest.name in names
 
     def _task_done(self, _fut):
         with self._cond:
@@ -553,6 +567,10 @@ class Job:
                     self._cond.notify_all()
                 self._emit("file_failed", {"id": post_id, "error": text})
                 return
+        with self._list_lock:
+            names = self._listings.get(dest.parent)
+            if names is not None:
+                names.add(dest.name)
         with self._cond:
             s.downloaded += 1
             self._in_flight -= 1
