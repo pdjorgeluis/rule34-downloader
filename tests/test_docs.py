@@ -63,6 +63,19 @@ class DocsTests(unittest.TestCase):
                        r"\\server\share", "whole folder"):
             self.assertIn(needle, body, needle)
 
+    def test_readme_and_help_explain_part_files_resume_and_cleanup(self):
+        readme = text(README)
+        running = dict(help_content.SECTIONS)["While it runs"].lower()
+        saved = dict(help_content.SECTIONS)["Where files are saved"].lower()
+        for name, doc in (("README", readme.lower()), ("Help running", running)):
+            self.assertIn(".part", doc, name)
+            self.assertIn("pause", doc, name)
+            self.assertIn("stop", doc, name)
+            self.assertIn("picks up where it left off", doc, name)
+        for name, doc in (("README", readme.lower()), ("Help saved", saved)):
+            self.assertIn(".part", doc, name)
+            self.assertIn("7 days", doc, name)
+
     def test_build_md_has_the_required_sections_in_order(self):
         md = text(BUILD_MD)
         self.assertEqual(headings(md, 1), ["Building Rule34 Downloader"])

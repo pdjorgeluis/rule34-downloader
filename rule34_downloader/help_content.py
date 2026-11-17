@@ -54,16 +54,18 @@ Files go into the folder you chose. If the option for a search folder is ticked,
 <folder>/<search name>/gifs
 <folder>/<search name>/videos
 
-Files that are already there are not downloaded again, so you can run the same search twice. When a run ends, press Open folder to see the files."""),
+Files that are already there are not downloaded again, so you can run the same search twice. When a run ends, press Open folder to see the files.
+
+While a file downloads, it is saved with .part at the end of its name, and a small .part.meta file sits beside it. The name loses .part only when the file is complete. A stopped or broken download keeps its .part file, and the app picks up where it left off the next time. Leftover .part, .part.meta and .part.lock files older than 7 days are deleted, but only after a run that reached the end of the results."""),
 
     ("While it runs", """\
 While a download runs, the app shows progress, counters and a log.
 
 If you pressed Search first, the top of the panel repeats how many posts were found.
 
-- Pause: stops fetching until you press Resume.
-- Resume: continues after a pause.
-- Stop: ends the download. Files already saved are kept.
+- Pause: stops fetching, and stops the files that are downloading within about 2 seconds. Their .part files stay.
+- Resume: continues after a pause. A paused file picks up where it left off.
+- Stop: ends the download. Files already saved are kept, and a file in progress keeps its .part file.
 - Retry now: if the server is unavailable, tries again right away instead of waiting.
 - Back to search: returns to the search form with your values kept. It works when the run has ended.
 

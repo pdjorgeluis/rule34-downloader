@@ -97,13 +97,15 @@ The Download tab holds the search form:
 
 Files land in `<folder>/<search name>/<pictures|gifs|videos>/<id>.<ext>`. Complete files are skipped on re-runs, so you can repeat a search.
 
+While a file downloads, it is saved as `<id>.<ext>.part`, with a small `<id>.<ext>.part.meta` file beside it. The name loses `.part` only when the file is complete. If you press Stop, or the program or the network breaks, the `.part` file stays, and the next time that file is downloaded the app picks up where it left off. If the copy on the server changed, the app discards the partial file and starts that file again. Leftover `.part`, `.part.meta` and `.part.lock` files older than 7 days are deleted, but only after a run that reached the end of the results.
+
 Type your tags, then press Search (or press Enter in the include box). A search uses one API request and downloads nothing. The line under the preview says how many posts were found and how many files will be downloaded. Press Download to start. It stays disabled until a search matches your tags, exclusions, minimum score and safety checkbox; after you change one of those, the line reads Out of date: press Search.
 
-The form switches to the progress panel. It shows the search and the destination, a progress bar, counters, a live log, a line with the number of posts found, and the API requests used this hour. A banner shows waiting, server-down, paused and slowed-down states. Pause, Resume, Retry now and Stop act on the running download. When it ends, Open folder shows the files and Back to search returns to the form with your values kept.
+The form switches to the progress panel. It shows the search and the destination, a progress bar, counters, a live log, a line with the number of posts found, and the API requests used this hour. A banner shows waiting, server-down, paused and slowed-down states. Pause, Resume, Retry now and Stop act on the running download. They also cut in on files that are downloading, within about 2 seconds. Pause keeps the partial file and continues it after Resume. When it ends, Open folder shows the files and Back to search returns to the form with your values kept.
 
 The Help tab explains the same things in plain words, including what each message means.
 
-Closing the window during a download asks first. If you confirm, the app stops the job and waits up to 10 seconds for it to end. Files already saved are kept.
+Closing the window during a download asks first. If you confirm, the app stops the job and waits up to 10 seconds for it to end. Files already saved are kept, and a file in progress keeps its `.part` file so it can continue later.
 
 ## Command line
 
