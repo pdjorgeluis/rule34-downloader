@@ -607,5 +607,39 @@ class KnownTotalTests(unittest.TestCase):
             self.assertNotEqual(s.total, 42, kw)
 
 
+class ChunkSizeTests(unittest.TestCase):
+    class _Resp:
+        status_code = 200
+        headers = {"Content-Length": "5"}
+
+        def __init__(self, sizes):
+            self.sizes = sizes
+
+        def iter_content(self, n):
+            self.sizes.append(n)
+            yield b"hello"
+
+        def close(self):
+            pass
+
+    class _Session:
+        def __init__(self, sizes):
+            self.sizes = sizes
+
+        def get(self, url, **kw):
+            return ChunkSizeTests._Resp(self.sizes)
+
+    def test_chunk_size_by_kind(self):
+        expect = {"jpg": 64 * 1024, "png": 64 * 1024, "gif": 256 * 1024,
+                  "mp4": 256 * 1024, "webm": 256 * 1024}
+        with tempfile.TemporaryDirectory() as d:
+            for ext, size in expect.items():
+                sizes = []
+                cfg = JobConfig(include=["cat"], dest=d, delay=0)
+                job = Job(cfg, _ListClient([]), session=self._Session(sizes))
+                job._download(f"http://h.invalid/1.{ext}", Path(d) / f"1.{ext}")
+                self.assertEqual(sizes, [size], ext)
+
+
 if __name__ == "__main__":
     unittest.main()
