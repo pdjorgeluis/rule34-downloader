@@ -505,5 +505,62 @@ class StopPromptnessTests(EngineBase):
         self.assertLessEqual(len(calls), 2)
 
 
+class _ListClient:
+    """Fake API client: one page of posts, counts total_count calls."""
+    class credentials:
+        api_key = "k"
+        user_id = "u"
+    requests_made = 0
+
+    def __init__(self, posts, total=None):
+        self.posts, self.total, self.total_calls = posts, total, 0
+
+    def fetch_posts(self, q, n, pid):
+        return self.posts if pid == 0 else []
+
+    def total_count(self, q):
+        self.total_calls += 1
+        return self.total
+
+
+class ExistingCheckTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
+
+    def test_existing_check_lists_each_folder_once(self):
+        pics = self.tmp / "cat" / "pictures"
+        vids = self.tmp / "cat" / "videos"
+        pics.mkdir(parents=True)
+        vids.mkdir(parents=True)
+        posts = []
+        for i in range(1, 501):
+            (pics / f"{i}.jpg").write_bytes(b"x")
+            posts.append({"id": i, "file_url": f"http://h.invalid/{i}.jpg"})
+        for i in range(501, 701):
+            (vids / f"{i}.mp4").write_bytes(b"x")
+            posts.append({"id": i, "file_url": f"http://h.invalid/{i}.mp4"})
+        cfg = JobConfig(include=["cat"], dest=self.tmp, delay=0, count=10000,
+                        types={"pictures", "videos"})
+        job = Job(cfg, _ListClient(posts))
+        scans, stats = [], []
+        real_scandir, real_stat = os.scandir, Path.stat
+
+        def scandir(path=".", *a, **k):
+            scans.append(str(path))
+            return real_scandir(path, *a, **k)
+
+        def stat(self_, *a, **k):
+            stats.append(str(self_))
+            return real_stat(self_, *a, **k)
+        with mock.patch("os.scandir", scandir), mock.patch.object(Path, "stat", stat):
+            s = job.run()
+        self.assertEqual(s.existing, 700)
+        self.assertEqual(s.downloaded, 0)
+        self.assertEqual(sorted(scans), sorted([str(pics), str(vids)]))
+        self.assertEqual(stats, [])
+
+
 if __name__ == "__main__":
     unittest.main()
