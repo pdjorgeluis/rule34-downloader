@@ -230,6 +230,30 @@ class WindowTests(GuiCase):
         self.assertEqual(w.statusBar().currentMessage(), "Account: 777 - key saved")
 
 
+class KnownTotalWiringTests(GuiCase):
+    def started_config(self, found):
+        from rule34_downloader.gui.main_window import MainWindow
+        self.save()
+        w = MainWindow(config_file=self.cfg, prefs_file=self.tmp / "prefs.json")
+        self.addCleanup(dispose, w)
+        w.show()
+        self.app.processEvents()
+        f = w.search_form
+        f.include_edit.setText("cat")
+        f.folder_edit.setText(str(self.tmp / "out"))
+        from rule34_downloader.gui.runner import SearchResult
+        self.assertTrue(f.begin_search())
+        f.set_search_result(SearchResult(True, found, "ok"))
+        self.app.processEvents()
+        with mock.patch.object(w.runner, "start") as start:
+            f.start_button.click()
+        self.assertEqual(start.call_count, 1)
+        return start.call_args.args[0]
+
+    def test_gui_passes_found_total_to_job_config(self):
+        self.assertEqual(self.started_config(321).known_total, 321)
+
+
 class SettingsTests(GuiCase):
     def test_settings_prefills_user_id_and_never_shows_key(self):
         self.save("999", FAKE_KEY)
