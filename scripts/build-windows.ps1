@@ -1,6 +1,7 @@
 # Windows twin of build-linux.sh: build the onedir app with PyInstaller,
 # smoke-test it, and pack a zip.
-# UNTESTED: this script was written on Linux and has never been run on Windows.
+# Written on Linux; run and passing on a GitHub windows-latest runner (see
+# .github/workflows/build-windows.yml). Not used by hand on a Windows desktop.
 # Needs PowerShell 5.1 or newer and no external modules.
 # Set R34_PYTHON to use another Python than .venv\Scripts\python.exe.
 $ErrorActionPreference = 'Stop'

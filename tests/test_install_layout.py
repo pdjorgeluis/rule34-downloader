@@ -174,7 +174,7 @@ class WindowsScriptTextTests(unittest.TestCase):
     def test_windows_script_still_starts_with_stop_preference(self):
         effective = [x for x in self.lines() if x and not x.startswith("#")]
         self.assertEqual(effective[0], "$ErrorActionPreference = 'Stop'")
-        self.assertIn("UNTESTED", PS1.read_text())
+        self.assertIn("windows-latest", PS1.read_text())
 
 
 class DocsTests(unittest.TestCase):

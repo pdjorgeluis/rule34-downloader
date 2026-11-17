@@ -25,7 +25,7 @@ README_SECTIONS = [
 BUILD_SECTIONS = [
     "Requirements", "Set up the development environment", "Run the tests",
     "Regenerate the icons", "Build for Linux",
-    "Install and uninstall on Linux", "Build for Windows (untested recipe)",
+    "Install and uninstall on Linux", "Build for Windows",
     "Release checklist", "Troubleshooting builds",
 ]
 
@@ -176,17 +176,17 @@ class DocsTests(unittest.TestCase):
         for word in ("rating:", "sort:", "score:"):
             self.assertIn(word, readme)
 
-    def test_build_md_marks_windows_as_untested(self):
+    def test_build_md_states_the_windows_recipe_ran_on_a_runner(self):
         md = text(BUILD_MD)
-        self.assertIn("This Windows recipe has not been run yet: "
-                      "it was written on Linux and is UNTESTED.", md)
-        body = md.split("## Build for Windows (untested recipe)", 1)[1]
+        self.assertNotIn("UNTESTED", md)
+        body = md.split("## Build for Windows", 1)[1]
         body = body.split("\n## ", 1)[0]
-        self.assertIn("UNTESTED", body)
-        self.assertIn("py -3.14 -m venv .venv", body)
-        self.assertIn(r"build\rule34-downloader-1.0.0-windows-x86_64.zip", body)
-        self.assertIn("Compress-Archive", body)
-        self.assertIn("UNTESTED", text(PS1))
+        for needle in ("windows-latest", "SMOKE OK (frozen exe)", "not been used by hand",
+                       "py -3.14 -m venv .venv",
+                       r"build\rule34-downloader-1.0.0-windows-x86_64.zip", "Compress-Archive"):
+            self.assertIn(needle, body, needle)
+        self.assertIn("windows-latest", text(PS1))
+        self.assertNotIn("UNTESTED", text(PS1))
 
     def test_windows_script_has_required_tokens(self):
         ps1 = text(PS1)
@@ -201,7 +201,7 @@ class DocsTests(unittest.TestCase):
             "-Wait -PassThru", ".ExitCode", "Test-Path $Smoke",
             "error: frozen exe smoke test failed", "SMOKE OK (frozen exe)",
             "rule34_downloader.version import __version__", "AMD64", "x86_64",
-            "Compress-Archive", "-Force", "BUILD OK", "UNTESTED",
+            "Compress-Archive", "-Force", "BUILD OK", "windows-latest",
             "[Console]::Error.WriteLine",
         ):
             self.assertIn(token, ps1, token)

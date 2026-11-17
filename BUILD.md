@@ -93,9 +93,9 @@ PREFIX=/tmp/r34-test bash packaging/linux/uninstall.sh
 
 Neither script touches the user's settings or downloads.
 
-## Build for Windows (untested recipe)
+## Build for Windows
 
-This Windows recipe has not been run yet: it was written on Linux and is UNTESTED.
+This recipe was written on Linux. It has run and passed on a GitHub `windows-latest` runner: the log ends with `SMOKE OK (frozen exe)` and `BUILD OK`, and the zip (about 45 MB) starts and shows its window. The script has not been used by hand on a Windows desktop. The Windows run of the unit tests shows about 32 failures and errors, mostly tests that expect Linux (bash scripts, the installer) plus some path, shortcut and timing tests. They are an open item and do not stop the build.
 
 On Windows, create a virtual environment and install the build requirements:
 
@@ -131,8 +131,9 @@ Start it from the Actions tab (Build Windows > Run workflow) or by pushing a tag
 5. Check that the smoke test passed: the output has `SMOKE OK (frozen binary)`.
 6. Install into a temporary `PREFIX` and start the program.
 7. Update the sizes in `README.md`.
-8. Commit.
-9. Tag the release.
+8. Run the Build Windows workflow (see "Build for Windows") and check its log for `SMOKE OK (frozen exe)` and `BUILD OK`.
+9. Commit.
+10. Tag the release.
 
 ## Troubleshooting builds
 
