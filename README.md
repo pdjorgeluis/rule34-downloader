@@ -42,6 +42,19 @@ rule34-downloader/rule34-downloader
 
 To build the tarball yourself, see `BUILD.md`.
 
+## Install on Windows
+
+There is no installer. You get a zip with the whole program in a folder.
+
+1. Get `rule34-downloader-1.0.0-windows-x86_64.zip`. If you take it from the GitHub Actions page, GitHub wraps it in another zip: unzip that first.
+2. Unzip it to a folder you keep, for example `C:\r34`.
+3. Open the `rule34-downloader` folder and double-click `rule34-downloader.exe`. Keep the whole folder together: the program needs the files beside it.
+4. Windows SmartScreen may say "Windows protected your PC", because the program is not signed. Click More info, then Run anyway.
+
+To remove the program, delete its folder. Your settings stay in `%APPDATA%\Rule34Downloader` (see "Where your data lives").
+
+Choosing the download folder: Browse opens the normal Windows folder dialog. For a network share (SMB), pick Network in the left panel, or type `\\server\share` in the address bar. A mapped drive letter works too. Windows asks for the user name and password itself. The "Connect to server" button exists only on Linux.
+
 ## Run from source
 
 Create a virtual environment and install the window requirements:

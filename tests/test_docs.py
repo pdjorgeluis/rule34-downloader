@@ -17,7 +17,7 @@ BUILD_MD = ROOT / "BUILD.md"
 PS1 = ROOT / "scripts" / "build-windows.ps1"
 
 README_SECTIONS = [
-    "What it does", "Install on Linux", "Run from source", "First start",
+    "What it does", "Install on Linux", "Install on Windows", "Run from source", "First start",
     "Using the window", "Command line", "Where your data lives",
     "Limits and good behavior", "Troubleshooting", "Project layout",
     "Tests", "Content notice",
@@ -54,6 +54,14 @@ class DocsTests(unittest.TestCase):
         md = text(README)
         self.assertEqual(headings(md, 1), ["Rule34 Downloader"])
         self.assertEqual(headings(md, 2), README_SECTIONS)
+
+    def test_readme_explains_how_to_install_and_use_it_on_windows(self):
+        md = text(README)
+        body = md.split("## Install on Windows", 1)[1].split("\n## ", 1)[0]
+        for needle in ("rule34-downloader-1.0.0-windows-x86_64.zip", "rule34-downloader.exe",
+                       "SmartScreen", "More info", "Run anyway", "Network",
+                       r"\\server\share", "whole folder"):
+            self.assertIn(needle, body, needle)
 
     def test_build_md_has_the_required_sections_in_order(self):
         md = text(BUILD_MD)
