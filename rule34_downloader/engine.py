@@ -32,7 +32,12 @@ from .resilience import (
 from .budget import default_waiter
 
 KINDS = ("pictures", "gifs", "videos")
-CHUNK = 64 * 1024
+CHUNK = 64 * 1024                      # pictures
+BIG_CHUNK = 256 * 1024                 # videos and gifs
+
+
+def chunk_size(kind) -> int:
+    return BIG_CHUNK if kind in ("videos", "gifs") else CHUNK
 DOWNLOAD_TIMEOUT = (10, 15)
 FILE_ATTEMPTS = 3
 POLICIES = ("stop", "pause")
@@ -711,7 +716,8 @@ class Job:
                         total)
         written = 0
         with open(part, mode) as fh:
-            for chunk in resp.iter_content(CHUNK):
+            ext = part.name[:-len(".part")].rsplit(".", 1)[-1]
+            for chunk in resp.iter_content(chunk_size(classify(ext))):
                 self._check_interrupt(epoch)
                 if chunk:
                     fh.write(chunk)
