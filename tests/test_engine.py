@@ -576,5 +576,36 @@ class ExistingCheckTests(unittest.TestCase):
                          ["7.jpg", "7.jpg.part", "7.jpg.part.meta"])
 
 
+class KnownTotalTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
+
+    def run_job(self, **kw):
+        events, client = [], _ListClient([], total=99)
+        cfg = JobConfig(include=["cat"], dest=self.tmp, delay=0, **kw)
+        s = Job(cfg, client, on_event=lambda k, d: events.append((k, d))).run()
+        started = [d for k, d in events if k == "started"]
+        return s, client, started
+
+    def test_known_total_skips_count_request(self):
+        s, client, started = self.run_job(known_total=42)
+        self.assertEqual(client.total_calls, 0)
+        self.assertEqual(s.total, 42)
+        self.assertEqual([d["total"] for d in started], [42])
+
+    def test_without_known_total_exactly_one_count_request(self):
+        s, client, started = self.run_job()
+        self.assertEqual(client.total_calls, 1)
+        self.assertEqual(s.total, 99)
+
+    def test_known_total_is_ignored_when_count_is_set_or_not_positive(self):
+        for kw in ({"count": 5, "known_total": 42}, {"known_total": 0}):
+            s, client, _ = self.run_job(**kw)
+            self.assertEqual(client.total_calls, 0 if "count" in kw else 1, kw)
+            self.assertNotEqual(s.total, 42, kw)
+
+
 if __name__ == "__main__":
     unittest.main()
