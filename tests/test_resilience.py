@@ -1,6 +1,7 @@
 import os
 import sys
 import threading
+import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -8,7 +9,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rule34_downloader.backoff import Backoff, GiveUpClock
 from rule34_downloader.errors import PermanentError, ServerUnavailable, TemporaryError
 from rule34_downloader.resilience import (
-    Adaptive, ResilientClient, Stopped, ThrottleGate, check_file_reply,
+    Adaptive, ResilientClient, StartLimiter, Stopped, StopEvent, ThrottleGate,
+    check_file_reply,
 )
 from fakes import FakeClock, fake_waiter  # noqa: E402
 
@@ -99,12 +101,129 @@ class GateTest(unittest.TestCase):
         self.assertGreaterEqual(self.clock(), 7.0)
         self.assertEqual(gate.remaining(), 0.0)
 
-    def test_gate_wait_uses_slices_of_at_most_quarter_second(self):
-        self.gate.trip(1.0)
+    def test_throttle_gate_makes_no_polling_wakeups(self):
+        # replaces the old "slices of at most 0.25 s" test: slice polling is gone
+        self.gate.trip(5.0)
         self.assertTrue(self.gate.wait())
-        self.assertTrue(self.waits)
-        self.assertLessEqual(max(self.waits), 0.25)
-        self.assertAlmostEqual(sum(self.waits), 1.0)
+        self.assertLessEqual(len(self.waits), 2)
+        self.assertAlmostEqual(sum(self.waits), 5.0)
+        self.waits.clear()
+        self.gate.trip(5.0)
+        self.assertTrue(self.gate.wait(StopEvent()))
+        self.assertLessEqual(len(self.waits), 2)
+
+    def test_throttle_gate_wakes_on_retry_now_stop_and_extended_trip(self):
+        def run_wait(gate, stop):
+            box = {}
+            t = threading.Thread(target=lambda: box.update(r=gate.wait(stop)), daemon=True)
+            t.start()
+            return t, box
+
+        # retry_now wakes a long wait at once (real waiter, 1000 s trip)
+        gate = ThrottleGate()
+        gate.trip(1000.0)
+        t, box = run_wait(gate, StopEvent())
+        time.sleep(0.05)
+        gate.retry_now()
+        t.join(1.0)
+        self.assertEqual(box, {"r": True})
+
+        # stop wakes it and the wait reports False
+        gate = ThrottleGate()
+        gate.trip(1000.0)
+        stop = StopEvent()
+        t, box = run_wait(gate, stop)
+        time.sleep(0.05)
+        stop.set()
+        t.join(1.0)
+        self.assertEqual(box, {"r": False})
+
+        # a later trip that extends the deadline wakes the waiter, which
+        # re-waits for the new, longer deadline (fake clock)
+        clock = FakeClock()
+        calls, first_blocked = [], threading.Event()
+
+        def waiter(seconds, ev):
+            calls.append(seconds)
+            if len(calls) == 1:
+                first_blocked.set()
+                ev.wait(3)                 # real wait: woken by the trip
+                return not ev.is_set()
+            clock.advance(seconds)
+            return True
+        gate = ThrottleGate(clock=clock, waiter=waiter)
+        gate.trip(10.0)
+        t, box = run_wait(gate, StopEvent())
+        self.assertTrue(first_blocked.wait(2))
+        clock.advance(9.0)
+        gate.trip(5.0)                     # deadline 14 > 10
+        t.join(2.0)
+        self.assertEqual(box, {"r": True})
+        self.assertEqual(calls, [10.0, 5.0])
+
+
+class StartLimiterTest(unittest.TestCase):
+    def test_start_limiter_spaces_starts_by_interval(self):
+        """5 acquires over 3 threads, interval 0.1: grants at 0, .1, .2, .3, .4
+        on a virtual clock the test drives (advance when every worker is blocked)."""
+        clock = FakeClock()
+        state = threading.Lock()
+        pending = []                       # (deadline, event)
+        done = [0]
+
+        def waiter(seconds, ev):
+            e = threading.Event()
+            with state:
+                pending.append((clock() + seconds, e))
+            e.wait(5)
+            return True
+        limiter = StartLimiter(clock=clock, waiter=waiter)
+        grants = []
+
+        def worker(n):
+            for _ in range(n):
+                self.assertTrue(limiter.acquire(StopEvent(), 0.1))
+                with state:
+                    grants.append(round(clock(), 6))
+            with state:
+                done[0] += 1
+        threads = [threading.Thread(target=worker, args=(n,), daemon=True)
+                   for n in (2, 2, 1)]
+        for t in threads:
+            t.start()
+        end = time.monotonic() + 5
+        while done[0] < 3 and time.monotonic() < end:
+            with state:
+                if pending and len(pending) + done[0] == 3:
+                    pending.sort(key=lambda p: p[0])
+                    deadline, e = pending.pop(0)
+                    clock.advance(max(0.0, deadline - clock()))
+                    e.set()
+            time.sleep(0.001)
+        for t in threads:
+            t.join(2)
+        self.assertEqual(sorted(grants), [0.0, 0.1, 0.2, 0.3, 0.4])
+
+    def test_start_limiter_returns_false_on_stop(self):
+        stop = StopEvent()
+        limiter = StartLimiter()
+        self.assertTrue(limiter.acquire(stop, 1000.0))     # first start is free
+        box = {}
+        t = threading.Thread(target=lambda: box.update(r=limiter.acquire(stop, 1000.0)),
+                             daemon=True)
+        t.start()
+        time.sleep(0.05)
+        stop.set()
+        t.join(1.0)
+        self.assertEqual(box, {"r": False})
+        self.assertFalse(StartLimiter().acquire(stop, 0.0))   # already stopped
+
+    def test_start_limiter_zero_interval_never_blocks(self):
+        waits = []
+        limiter = StartLimiter(clock=FakeClock(), waiter=lambda s, e: waits.append(s) or True)
+        for _ in range(5):
+            self.assertTrue(limiter.acquire(StopEvent(), 0.0))
+        self.assertEqual(waits, [])
 
 
 class AdaptiveTest(unittest.TestCase):

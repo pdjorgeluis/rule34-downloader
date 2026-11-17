@@ -355,5 +355,155 @@ class EngineTests(EngineBase):
         self.assertEqual(kinds, ["started", "finished"])
 
 
+class RecordingLimiter:
+    """Stands in for StartLimiter: records the interval, never blocks."""
+
+    def __init__(self):
+        self.intervals = []
+
+    def acquire(self, stop, interval):
+        self.intervals.append(interval)
+        return not stop.is_set()
+
+
+class SharedLimiterTests(EngineBase):
+    def job(self, limiter, adaptive=None, **kw):
+        kw.setdefault("delay", 0)
+        cfg = JobConfig(include=["cat"], dest=self.tmp, **kw)
+        client = ApiClient(Credentials(USER_ID, API_KEY))
+        return Job(cfg, client, on_event=self.on_event, limiter=limiter, adaptive=adaptive)
+
+    def test_engine_interval_is_delay_over_workers(self):
+        lim = RecordingLimiter()
+        s = self.job(lim, count=4, delay=2.0, workers=4).run()
+        self.assertEqual(s.downloaded, 4)
+        self.assertEqual(lim.intervals, [0.5] * 4)
+        lim = RecordingLimiter()
+        self.job(lim, count=1, delay=0.5, workers=1).run()
+        self.assertEqual(lim.intervals, [0.5])
+
+    def test_adaptive_level_raises_interval(self):
+        from rule34_downloader.resilience import Adaptive
+        ad = Adaptive(base_delay=0.5)
+        self.assertTrue(ad.overload())          # level 1: 1 worker, delay x2
+        lim = RecordingLimiter()
+        self.job(lim, adaptive=ad, count=2, delay=2.0, workers=4).run()
+        self.assertEqual(lim.intervals, [4.0, 4.0])   # 2.0*2 / 1 worker
+
+    def test_download_worker_does_not_sleep_after_file(self):
+        job = self.job(RecordingLimiter(), count=2, delay=30.0, workers=1)
+        waits = []
+        real_wait = job._stop.wait
+        job._stop.wait = lambda *a, **k: (waits.append(a), real_wait(*a, **k))[1]
+        t0 = time.monotonic()
+        s = job.run()
+        self.assertLess(time.monotonic() - t0, 5)
+        self.assertEqual(s.downloaded, 2)
+        self.assertEqual(waits, [])
+
+    def test_real_limiter_spaces_file_starts_across_workers(self):
+        s = self.job(None, count=4, delay=0.2, workers=2).run()
+        self.assertEqual(s.downloaded, 4)
+        done = [d for d in self.kinds("file_done")]
+        self.assertEqual(len(done), 4)
+
+
+class StopPromptnessTests(EngineBase):
+    """Review Focus: Stop while paused / in a retry backoff / in the
+    unavailable wait ends the job within 2 s (no missed wake-ups)."""
+
+    def run_in_thread(self, job):
+        box = {}
+
+        def target():
+            box["s"] = job.run()
+        t = threading.Thread(target=target, daemon=True)
+        t.start()
+        return t, box
+
+    def wait_for(self, kind, timeout=3.0):
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if self.kinds(kind):
+                return True
+            time.sleep(0.005)
+        return False
+
+    def assert_stops_within_2s(self, job, t, box):
+        t0 = time.monotonic()
+        job.stop()
+        t.join(2.0)
+        self.assertFalse(t.is_alive(), "job did not end within 2 s of stop()")
+        self.assertLess(time.monotonic() - t0, 2.0)
+        self.assertEqual(box["s"].reason, "stopped")
+
+    def test_stop_while_paused_ends_within_2s(self):
+        job = self.make(count=20, delay=0)
+        t, box = self.run_in_thread(job)
+        self.assertTrue(self.wait_for("page"))
+        job.pause()
+        time.sleep(0.2)
+        self.assert_stops_within_2s(job, t, box)
+
+    def test_stop_while_paused_before_first_page_ends_within_2s(self):
+        job = self.make(count=20, delay=0)
+        job.pause()
+        t, box = self.run_in_thread(job)
+        time.sleep(0.2)
+        self.assert_stops_within_2s(job, t, box)
+
+    def test_stop_during_file_retry_backoff_ends_within_2s(self):
+        from rule34_downloader.backoff import Backoff
+        self.srv.file_script = {i: [503] * 3 for i in range(1, 26)}
+        cfg = JobConfig(include=["cat"], dest=self.tmp, delay=0, count=2, workers=2)
+        job = Job(cfg, ApiClient(Credentials(USER_ID, API_KEY)), on_event=self.on_event,
+                  retries=True, backoff=Backoff(base=600, jitter=0))
+        t, box = self.run_in_thread(job)
+        self.assertTrue(self.wait_for("waiting"))
+        self.assert_stops_within_2s(job, t, box)
+
+    def test_stop_during_unavailable_wait_ends_within_2s(self):
+        self.srv.api_script = [(500, b"", {})]
+        cfg = JobConfig(include=["cat"], dest=self.tmp, delay=0, count=2,
+                        unavailable_policy="pause")
+        job = Job(cfg, ApiClient(Credentials(USER_ID, API_KEY)), on_event=self.on_event)
+        t, box = self.run_in_thread(job)
+        self.assertTrue(self.wait_for("server_unavailable"))
+        time.sleep(0.1)
+        self.assert_stops_within_2s(job, t, box)
+
+    def test_unavailable_wait_wakes_on_stop_and_retry_now_without_polling(self):
+        from rule34_downloader.budget import default_waiter
+        for action, expect in (("stop", None), ("retry_now", "retry_now")):
+            calls = []
+
+            def waiter(seconds, ev, calls=calls):
+                calls.append(seconds)
+                return default_waiter(seconds, ev)
+            cfg = JobConfig(include=["cat"], dest=self.tmp, delay=0)
+            job = Job(cfg, ApiClient(Credentials(USER_ID, API_KEY)), waiter=waiter)
+            box = {}
+            t = threading.Thread(target=lambda: box.update(r=job._unavailable_wait()),
+                                 daemon=True)
+            t.start()
+            time.sleep(0.5)                   # a 50 ms poll would call ~10 times
+            getattr(job, action)()
+            t.join(2.0)
+            self.assertFalse(t.is_alive(), action)
+            self.assertEqual(box["r"], expect, action)
+            self.assertLessEqual(len(calls), 2, (action, calls))
+
+    def test_unavailable_wait_auto_retry_needs_no_polling(self):
+        calls = []
+        cfg = JobConfig(include=["cat"], dest=self.tmp, delay=0, auto_retry_seconds=0.3)
+
+        def waiter(seconds, ev):
+            calls.append(seconds)
+            return not ev.wait(seconds)
+        job = Job(cfg, ApiClient(Credentials(USER_ID, API_KEY)), waiter=waiter)
+        self.assertEqual(job._unavailable_wait(), "auto_retry")
+        self.assertLessEqual(len(calls), 2)
+
+
 if __name__ == "__main__":
     unittest.main()
