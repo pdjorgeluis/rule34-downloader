@@ -43,6 +43,10 @@ FILE_ATTEMPTS = 3
 POLICIES = ("stop", "pause")
 
 
+class _ChangedOnServer(Exception):
+    """A 206 reply's total differs from the sidecar's: restart from zero."""
+
+
 class Interrupted(Exception):
     """Stop or Pause hit a file mid-download. Not a failure, not a retry."""
 
@@ -659,6 +663,10 @@ class Job:
                         self._check_interrupt(epoch)
                     except Interrupted:
                         raise
+                    except _ChangedOnServer:
+                        _discard(part, meta)       # spliced bytes would be corrupt
+                        offset, validator = 0, None
+                        continue
                     except Exception:
                         # the read broke because stop/pause closed the response
                         reason = self._interrupt_reason(epoch)
@@ -702,6 +710,10 @@ class Job:
                 raise TemporaryError("unexpected Content-Range", kind="http")
             if m.group(2) != "*":
                 total = int(m.group(2))
+            stored = _read_meta(meta).get("total")
+            if (total is not None and isinstance(stored, int)
+                    and not isinstance(stored, bool) and stored != total):
+                raise _ChangedOnServer()   # no validator caught it: file changed
             mode = "ab"
         else:                                 # 200: truncate and restart
             if not _header(rh, "Content-Encoding"):
