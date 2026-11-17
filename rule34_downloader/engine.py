@@ -150,10 +150,14 @@ def _abort_response(resp):
     """Close a response from another thread; harmless if done twice.
 
     shutdown() on the socket wakes a reader blocked in recv(); close() alone
-    may not."""
+    may not. Only a response that still holds its pooled connection
+    (urllib3 raw._connection is not None) is shut down: once the body was read
+    to the end urllib3 has released the connection back to the pool, and the
+    socket may already serve another worker, so it is left untouched."""
     try:
-        sock = resp.raw._fp.fp.raw._sock
-        sock.shutdown(socket.SHUT_RDWR)
+        if resp.raw._connection is not None:
+            sock = resp.raw._fp.fp.raw._sock
+            sock.shutdown(socket.SHUT_RDWR)
     except Exception:
         pass
     try:
