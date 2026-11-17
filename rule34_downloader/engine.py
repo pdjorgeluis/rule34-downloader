@@ -23,7 +23,7 @@ except ImportError:      # non-POSIX: the in-process lock only
 from .api import ApiClient, ApiError
 from .backoff import Backoff, GiveUpClock
 from .errors import PermanentError, TemporaryError, classify_exception
-from .files import classify, dest_path, ext_from_url, list_folder
+from .files import classify, dest_path, ext_from_url, list_folder, sweep_orphans
 from .query import build_query
 from .resilience import (
     Adaptive, ResilientClient, StartLimiter, Stopped, StopEvent, ThrottleGate,
@@ -249,8 +249,9 @@ class Job:
         self._active_lock = threading.Lock()
         self._pause_epoch = 0
         self._listings = {}              # folder -> set of complete names
+        self._parts = {}                 # folder -> {part-file name: mtime} from that listing
         self._list_lock = threading.Lock()
-        self._page_ids = frozenset()     # post ids of the page being handled
+        self._seen = set()               # post ids seen by the whole job
         self._finished = False
         self.summary = Summary()
         self._rc = ResilientClient(
@@ -358,7 +359,17 @@ class Job:
             self._finish(base_requests)
             raise
         self._cleanup(executor)
+        if s.reason == "end_of_results":
+            self._sweep_orphans()
         return self._finish(base_requests)
+
+    def _sweep_orphans(self):
+        """Every page was seen: stale .part/.meta/.lock files of posts that are
+        not in the results are leftovers. Never after count_reached/stop/error."""
+        with self._list_lock:
+            folders = list(self._parts.items())
+        for folder, parts in folders:
+            sweep_orphans(folder, self._seen, parts=parts)
 
     def _cleanup(self, executor):
         executor.shutdown(wait=True)
@@ -398,7 +409,7 @@ class Job:
 
     def _page_loop(self, executor) -> str:
         cfg, s = self.config, self.summary
-        seen = set()
+        seen = self._seen
         pid = 0
         while True:
             if not self._wait_gate():
@@ -432,7 +443,6 @@ class Job:
             if not posts:
                 return "end_of_results"
             s.pages += 1
-            self._page_ids = frozenset(str(p.get("id")) for p in posts)
             self._emit("page", {"pid": pid, "posts": len(posts)})
             for post in posts:
                 outcome = self._handle_post(post, seen, executor)
@@ -526,8 +536,9 @@ class Job:
         with self._list_lock:
             names = self._listings.get(dest.parent)
             if names is None:
+                parts = self._parts[dest.parent] = {}
                 names = self._listings[dest.parent] = list_folder(
-                    dest.parent, active_ids=self._page_ids)
+                    dest.parent, parts)
             return dest.name in names
 
     def _task_done(self, _fut):

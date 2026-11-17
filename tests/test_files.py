@@ -76,7 +76,7 @@ class FilesTests(unittest.TestCase):
                 self._make(d, now, n, 30)
             self._make(d, now, "1.jpg", 30)
             self._make(d, now, "2.jpg", 0, b"")
-            names = list_folder(d, now=now)
+            names = list_folder(d)
             self.assertEqual(names, {"1.jpg"})
             self.assertEqual(sorted(p.name for p in d.iterdir()),
                              ["1.jpg", "2.jpg", "3.jpg.part", "3.jpg.part.lock",

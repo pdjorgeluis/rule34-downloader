@@ -56,18 +56,21 @@ def dest_path(base, include, kind, post_id, ext, by_search=True) -> Path:
 ORPHAN_AGE = 7 * 24 * 3600   # seconds
 
 
+_SWEPT_SUFFIXES = (".part", ".part.meta", ".part.lock")
+
+
 def _post_id_of(name: str):
-    """Post id from '<id>.<ext>.part' / '<id>.<ext>.part.meta' (else None)."""
+    """Post id from '<id>.<ext>.part' / '.part.meta' / '.part.lock' (else None)."""
     stem = name.split(".", 1)[0]
     return stem or None
 
 
-def list_folder(folder, active_ids=(), now=None, max_age=ORPHAN_AGE) -> set:
+def list_folder(folder, parts=None) -> set:
     """One os.scandir of a <kind> folder: the set of names that are complete
-    (size > 0, no .part suffix). Stale .part / .part.meta files (mtime older
-    than max_age) of posts not in active_ids are deleted on the way."""
-    now = time.time() if now is None else now
-    active = {str(i) for i in active_ids}
+    (size > 0, no .part suffix). Lists only; never deletes anything. When a
+    dict is passed as `parts`, it is filled with {name: mtime} of the
+    .part/.part.meta/.part.lock files met on the way, so a later
+    sweep_orphans(parts=...) needs no second scan."""
     done = set()
     try:
         it = os.scandir(folder)
@@ -78,20 +81,32 @@ def list_folder(folder, active_ids=(), now=None, max_age=ORPHAN_AGE) -> set:
             try:
                 if not e.is_file():
                     continue
-                name = e.name
-                st = e.stat()
-                if name.endswith((".part", ".part.meta")):
-                    if (now - st.st_mtime > max_age
-                            and _post_id_of(name) not in active):
-                        try:
-                            os.unlink(e.path)
-                        except OSError:
-                            pass
-                elif st.st_size > 0:
-                    done.add(name)
+                if e.name.endswith(_SWEPT_SUFFIXES):
+                    if parts is not None:
+                        parts[e.name] = e.stat().st_mtime
+                elif e.stat().st_size > 0:
+                    done.add(e.name)
             except OSError:
                 continue
     return done
+
+
+def sweep_orphans(folder, seen_ids, now=None, max_age=ORPHAN_AGE, parts=None) -> None:
+    """Delete .part / .part.meta / .part.lock files older than max_age (by
+    mtime) whose post id is not in seen_ids. Call it only when every page of a
+    search was seen, so a stale .part of a post on a later page is safe.
+    `parts` ({name: mtime}, from list_folder) replaces the directory scan."""
+    now = time.time() if now is None else now
+    seen = {str(i) for i in seen_ids}
+    if parts is None:
+        parts = {}
+        list_folder(folder, parts)
+    for name, mtime in parts.items():
+        if now - mtime > max_age and _post_id_of(name) not in seen:
+            try:
+                os.unlink(os.path.join(folder, name))
+            except OSError:
+                pass
 
 
 def is_complete(path) -> bool:
