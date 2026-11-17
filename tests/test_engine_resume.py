@@ -174,6 +174,17 @@ class ResumeTests(ResumeBase):
         self.run_ok(srv)
         self.assertEqual(srv.seen, [(f"bytes={236 * KIB}-", '"v1"')])
 
+    def test_changed_server_file_without_validator_restarts_and_result_is_new_content(self):
+        new = bytes((k * 11 + 3) % 253 for k in range(700 * KIB))   # different length
+        srv = self.server(etag=None, body=new)
+        self.make_part(SOURCE[:300 * KIB], validator=None, total=len(SOURCE))
+        s = self.job(srv).run()
+        self.assertEqual(s.downloaded, 1, self.events)
+        self.assertEqual(self.final().read_bytes(), new)   # not old-prefix + new-tail
+        self.assertFalse(self.part().exists())
+        self.assertFalse(self.meta().exists())
+        self.assertEqual(srv.seen[-1][0], None)            # restarted without Range
+
     def test_zero_byte_part_restarts(self):
         srv = self.server()
         self.make_part(b"", validator='"stale"')
