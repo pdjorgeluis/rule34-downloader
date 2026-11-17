@@ -26,14 +26,15 @@ from .errors import PermanentError, TemporaryError, classify_exception
 from .files import classify, dest_path, ext_from_url, is_complete
 from .query import build_query
 from .resilience import (
-    Adaptive, ResilientClient, Stopped, ThrottleGate, check_file_reply,
+    Adaptive, ResilientClient, StartLimiter, Stopped, StopEvent, ThrottleGate,
+    check_file_reply,
 )
+from .budget import default_waiter
 
 KINDS = ("pictures", "gifs", "videos")
 CHUNK = 64 * 1024
 DOWNLOAD_TIMEOUT = (10, 15)
 FILE_ATTEMPTS = 3
-UNAVAILABLE_SLICE = 0.05   # seconds; the ruling allows at most 0.25
 POLICIES = ("stop", "pause")
 
 
@@ -210,15 +211,18 @@ class Job:
                  on_event: Optional[Callable] = None, *,
                  gate: Optional[ThrottleGate] = None, adaptive: Optional[Adaptive] = None,
                  budget=None, backoff: Optional[Backoff] = None,
-                 giveup: Optional[GiveUpClock] = None, retries: bool = False):
+                 giveup: Optional[GiveUpClock] = None, retries: bool = False,
+                 limiter: Optional[StartLimiter] = None, waiter=None):
         self.config = config
+        self._limiter = limiter if limiter is not None else StartLimiter()
+        self._waiter = waiter or default_waiter
         self.client = client
         self._retries = bool(retries)
         self._session = session
         self._on_event = on_event
         self._query = build_query(config.include, config.exclude, config.min_score,
                                   config.order, config.safety)
-        self._stop = threading.Event()
+        self._stop = StopEvent()         # wakes event-based waits when set
         self._gate = threading.Event()   # set = running, clear = paused
         self._gate.set()
         self._cond = threading.Condition()
@@ -226,7 +230,7 @@ class Job:
         self._sessions = []
         self._in_flight = 0
         self._outstanding = 0
-        self._retry_evt = threading.Event()
+        self._retry_evt = StopEvent()    # "StopEvent" = Event with wake listeners
         self._active = set()             # responses being read, guarded by _active_lock
         self._active_lock = threading.Lock()
         self._pause_epoch = 0
@@ -425,16 +429,23 @@ class Job:
         """Block until retry_now / auto-retry (returns who) or stop (returns None)."""
         auto = self.config.auto_retry_seconds
         start = time.monotonic()
-        while True:
-            if self._stop.is_set():
-                return None
-            if self._retry_evt.is_set():
-                return "retry_now"
-            left = None if auto is None else auto - (time.monotonic() - start)
-            if left is not None and left <= 0:
-                return "auto_retry"
-            step = UNAVAILABLE_SLICE if left is None else min(UNAVAILABLE_SLICE, left)
-            self._retry_evt.wait(step)
+        wake = threading.Event()         # set by stop() or retry_now(): one blocking wait
+        self._stop.add_listener(wake)
+        self._retry_evt.add_listener(wake)
+        try:
+            while True:
+                wake.clear()             # clear first, then check: no lost wake-up
+                if self._stop.is_set():
+                    return None
+                if self._retry_evt.is_set():
+                    return "retry_now"
+                left = None if auto is None else auto - (time.monotonic() - start)
+                if left is not None and left <= 0:
+                    return "auto_retry"
+                self._waiter(3600.0 if left is None else left, wake)
+        finally:
+            self._stop.remove_listener(wake)
+            self._retry_evt.remove_listener(wake)
 
     def _drain_reason(self, default: str) -> str:
         """Wait for in-flight work, then decide how the job ended."""
@@ -514,6 +525,9 @@ class Job:
             if not self._rc.gate.wait(self._stop):
                 self._release()          # stopped while waiting: abandon, no counter
                 return
+            if not self._limiter.acquire(self._stop, self._start_interval()):
+                self._release()          # stopped while waiting for a start slot
+                return
             try:
                 nbytes = self._download(url, dest)
                 break
@@ -544,9 +558,12 @@ class Job:
             self._in_flight -= 1
             self._cond.notify_all()
         self._emit("file_done", {"id": post_id, "type": kind, "path": str(dest), "bytes": nbytes})
-        delay = self._rc.adaptive.effective_delay(self.config.delay)
-        if delay > 0:
-            self._stop.wait(delay)
+
+    def _start_interval(self) -> float:
+        """Seconds between two file starts, shared by all workers: the delay
+        spread over the workers, so the aggregate pace equals the delay."""
+        ad, cfg = self._rc.adaptive, self.config
+        return ad.effective_delay(cfg.delay) / ad.effective_workers(cfg.workers)
 
     def _file_retry(self, post_id, err: TemporaryError, attempt: int):
         rc = self._rc

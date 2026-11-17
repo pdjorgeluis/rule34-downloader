@@ -19,16 +19,56 @@ class Stopped(Exception):
     """The stop event was set while the client was waiting."""
 
 
+class StopEvent(threading.Event):
+    """An Event that can wake other waiters when it is set.
+
+    A thread blocked on its own private wake-up Event registers it here with
+    add_listener(); set() sets every registered listener, so one blocking wait
+    covers "deadline, some other signal, or stop" without polling."""
+
+    def __init__(self):
+        super().__init__()
+        self._listeners = []
+        self._listeners_lock = threading.Lock()
+
+    def add_listener(self, wake: threading.Event) -> None:
+        with self._listeners_lock:
+            self._listeners.append(wake)
+        if self.is_set():              # set() may have run before we registered
+            wake.set()
+
+    def remove_listener(self, wake: threading.Event) -> None:
+        with self._listeners_lock:
+            try:
+                self._listeners.remove(wake)
+            except ValueError:
+                pass
+
+    def set(self) -> None:
+        super().set()
+        with self._listeners_lock:
+            listeners = list(self._listeners)
+        for wake in listeners:
+            wake.set()
+
+
 class ThrottleGate:
     def __init__(self, clock: Callable[[], float] = time.monotonic,
                  waiter: Optional[Callable[[float, Optional[threading.Event]], bool]] = None,
                  slice_seconds: float = 0.25):
         self._clock = clock
         self._waiter = waiter or default_waiter
+        # only used when `stop` is a plain threading.Event (cannot wake us):
+        # then the wait falls back to slices of this length. A StopEvent never polls.
         self.slice_seconds = slice_seconds
         self._lock = threading.Lock()
         self._not_before = 0.0
+        self._wakes = set()          # private wake-up events of blocked waiters
         self.last_reason = ""
+
+    def _wake_all(self) -> None:     # caller holds self._lock
+        for wake in self._wakes:
+            wake.set()
 
     def trip(self, seconds: float, reason: str = "") -> None:
         if seconds <= 0:
@@ -38,6 +78,7 @@ class ThrottleGate:
             if until > self._not_before:
                 self._not_before = until
                 self.last_reason = reason
+                self._wake_all()     # waiters re-read the longer deadline
 
     def remaining(self) -> float:
         with self._lock:
@@ -46,16 +87,85 @@ class ThrottleGate:
     def retry_now(self) -> None:
         with self._lock:
             self._not_before = 0.0
+            self._wake_all()
 
     def wait(self, stop: Optional[threading.Event] = None) -> bool:
+        """Block until the deadline passes (True), or stop is set (False).
+        A retry_now or a later, longer trip wakes the waiter to re-check."""
+        if stop is not None and not isinstance(stop, StopEvent):
+            return self._wait_polling(stop)
+        wake = threading.Event()
+        with self._lock:
+            self._wakes.add(wake)
+        if stop is not None:
+            stop.add_listener(wake)
+        try:
+            while True:
+                wake.clear()                 # clear first, then check: no lost wake-up
+                left = self.remaining()
+                if left <= 0:
+                    return True
+                if stop is not None and stop.is_set():
+                    return False
+                self._waiter(left, wake)
+        finally:
+            if stop is not None:
+                stop.remove_listener(wake)
+            with self._lock:
+                self._wakes.discard(wake)
+
+    def _wait_polling(self, stop: threading.Event) -> bool:
         while True:
             left = self.remaining()
             if left <= 0:
                 return True
-            if stop is not None and stop.is_set():
+            if stop.is_set():
                 return False
             if not self._waiter(min(left, self.slice_seconds), stop):
                 return False
+
+
+class StartLimiter:
+    """One shared pace for file starts: at least `interval` seconds between
+    two granted starts, whichever worker asks. Starts are handed out in the
+    order of arrival by reserving the next slot."""
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic,
+                 waiter: Optional[Callable[[float, Optional[threading.Event]], bool]] = None):
+        self._clock = clock
+        self._waiter = waiter or default_waiter
+        self._lock = threading.Lock()
+        self._last: Optional[float] = None      # start time of the latest reserved slot
+
+    def acquire(self, stop: Optional[threading.Event], interval: float) -> bool:
+        if stop is not None and stop.is_set():
+            return False
+        with self._lock:
+            now = self._clock()
+            slot = now if self._last is None else max(now, self._last + interval)
+            self._last = slot
+        left = slot - now
+        if left <= 0:
+            return True
+        wake = threading.Event()
+        listening = isinstance(stop, StopEvent)
+        if listening:
+            stop.add_listener(wake)
+        try:
+            while True:
+                wake.clear()                 # clear first, then check: no lost wake-up
+                if stop is not None and stop.is_set():
+                    return False
+                left = slot - self._clock()
+                if left <= 0:
+                    return True
+                if listening or stop is None:
+                    self._waiter(left, wake)
+                elif not self._waiter(left, stop):    # plain Event: legacy path
+                    return False
+        finally:
+            if listening:
+                stop.remove_listener(wake)
 
 
 class Adaptive:

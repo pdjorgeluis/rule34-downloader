@@ -457,7 +457,7 @@ class StopPromptnessTests(EngineBase):
         self.srv.file_script = {i: [503] * 3 for i in range(1, 26)}
         cfg = JobConfig(include=["cat"], dest=self.tmp, delay=0, count=2, workers=2)
         job = Job(cfg, ApiClient(Credentials(USER_ID, API_KEY)), on_event=self.on_event,
-                  retries=True, backoff=Backoff(base=600, jitter=0))
+                  retries=True, backoff=Backoff(base=600, cap=600, jitter=0))
         t, box = self.run_in_thread(job)
         self.assertTrue(self.wait_for("waiting"))
         self.assert_stops_within_2s(job, t, box)
