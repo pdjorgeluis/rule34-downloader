@@ -94,5 +94,20 @@ class KeepAliveTests(unittest.TestCase):
         sock.shutdown.assert_called_once()
 
 
+class StaleLockTests(unittest.TestCase):
+    def test_part_lock_leftover_does_not_block_a_new_download(self):
+        srv = _KeepAliveServer()
+        self.addCleanup(srv.close)
+        with tempfile.TemporaryDirectory() as d:
+            pics = Path(d) / "t" / "pictures"
+            pics.mkdir(parents=True)
+            (pics / "1.jpg.part.lock").write_bytes(b"")   # crash leftover, no holder
+            cfg = JobConfig(include=["t"], dest=Path(d), workers=1, delay=0,
+                            count=1)
+            s = Job(cfg, _Client(srv.port, 1)).run()
+            self.assertEqual(s.downloaded, 1)
+            self.assertEqual((pics / "1.jpg").read_bytes(), BODY)
+
+
 if __name__ == "__main__":
     unittest.main()
