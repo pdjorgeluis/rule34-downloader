@@ -87,12 +87,17 @@ def _distinct_mounts(mounts) -> list:
     return out
 
 
+def _use_native_dialog() -> bool:
+    """Windows' own folder dialog browses network shares (UNC paths, Network, mapped drives)."""
+    return sys.platform == "win32"
+
+
 def build_folder_dialog(parent, start_dir: str) -> QFileDialog:
     dlg = QFileDialog(parent, "Choose a folder", start_dir)
     dlg.setFileMode(QFileDialog.FileMode.Directory)
-    # Avoid the native dialog: the GTK chooser can open larger than the screen and hide its confirm button.
+    # Avoid the native dialog off Windows: the GTK chooser can open larger than the screen and hide its confirm button.
     dlg.setOption(QFileDialog.Option.ShowDirsOnly, True)
-    dlg.setOption(QFileDialog.Option.DontUseNativeDialog, True)
+    dlg.setOption(QFileDialog.Option.DontUseNativeDialog, not _use_native_dialog())
     linux = sys.platform.startswith("linux")
 
     labels = _ShareLabels(dlg)

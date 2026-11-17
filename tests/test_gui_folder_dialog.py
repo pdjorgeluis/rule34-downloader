@@ -111,6 +111,15 @@ class FolderDialogCase(GuiCase):
         self.assertEqual(dlg.windowTitle(), "Choose a folder")
         self.assertEqual(dlg.directory().absolutePath(), str(self.tmp))
 
+    def test_windows_uses_the_native_dialog_so_network_shares_are_reachable(self):
+        from rule34_downloader.gui import folder_dialog
+        with mock.patch.object(folder_dialog, "_use_native_dialog", return_value=True):
+            dlg = self.build()
+        self.assertFalse(dlg.testOption(QFileDialog.Option.DontUseNativeDialog))
+        with mock.patch.object(folder_dialog, "_use_native_dialog", return_value=False):
+            dlg = self.build()
+        self.assertTrue(dlg.testOption(QFileDialog.Option.DontUseNativeDialog))
+
     def test_sidebar_lists_each_mount_with_its_name(self):
         dlg = self.build()
         urls = [u.toLocalFile() for u in dlg.sidebarUrls()]
