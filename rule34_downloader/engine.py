@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import socket
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -22,10 +23,34 @@ from .resilience import (
 
 KINDS = ("pictures", "gifs", "videos")
 CHUNK = 64 * 1024
-DOWNLOAD_TIMEOUT = (10, 60)
+DOWNLOAD_TIMEOUT = (10, 15)
 FILE_ATTEMPTS = 3
 UNAVAILABLE_SLICE = 0.05   # seconds; the ruling allows at most 0.25
 POLICIES = ("stop", "pause")
+
+
+class Interrupted(Exception):
+    """Stop or Pause hit a file mid-download. Not a failure, not a retry."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason   # "stop" | "pause"
+
+
+def _abort_response(resp):
+    """Close a response from another thread; harmless if done twice.
+
+    shutdown() on the socket wakes a reader blocked in recv(); close() alone
+    may not."""
+    try:
+        sock = resp.raw._fp.fp.raw._sock
+        sock.shutdown(socket.SHUT_RDWR)
+    except Exception:
+        pass
+    try:
+        resp.close()
+    except Exception:
+        pass
 
 
 @dataclass
@@ -103,6 +128,9 @@ class Job:
         self._in_flight = 0
         self._outstanding = 0
         self._retry_evt = threading.Event()
+        self._active = set()             # responses being read, guarded by _active_lock
+        self._active_lock = threading.Lock()
+        self._pause_epoch = 0
         self._finished = False
         self.summary = Summary()
         self._rc = ResilientClient(
@@ -127,6 +155,9 @@ class Job:
         if self._stop.is_set() or not self._gate.is_set():
             return
         self._gate.clear()
+        with self._active_lock:
+            self._pause_epoch += 1
+        self._abort_active()
         self._emit("paused", {})
 
     def resume(self):
@@ -143,8 +174,15 @@ class Job:
     def stop(self):
         self._stop.set()
         self._gate.set()
+        self._abort_active()
         with self._cond:
             self._cond.notify_all()
+
+    def _abort_active(self):
+        with self._active_lock:
+            active = list(self._active)
+        for resp in active:
+            _abort_response(resp)
 
     # -- helpers -------------------------------------------------------------
     def _emit(self, kind, data):
@@ -380,6 +418,12 @@ class Job:
             try:
                 nbytes = self._download(url, dest)
                 break
+            except Interrupted as intr:
+                # not a failure, not a retry; the .part stays on disk
+                if intr.reason == "stop" or not self._wait_gate():
+                    self._release()
+                    return
+                continue
             except Exception as exc:
                 err = self._file_error(exc)
                 if (self._retries and isinstance(err, TemporaryError)
@@ -420,26 +464,64 @@ class Job:
                              "error": self._safe(err)})
         self._emit("waiting", {"reason": reason, "seconds": delay, "attempt": attempt})
 
+    def _interrupt_reason(self, epoch):
+        if self._stop.is_set():
+            return "stop"
+        with self._active_lock:
+            paused = self._pause_epoch != epoch
+        if paused or not self._gate.is_set():
+            return "pause"
+        return None
+
+    def _check_interrupt(self, epoch):
+        reason = self._interrupt_reason(epoch)
+        if reason:
+            raise Interrupted(reason)
+
     def _download(self, url, dest: Path) -> int:
         part = dest.with_name(dest.name + ".part")
         dest.parent.mkdir(parents=True, exist_ok=True)
+        keep = False
         try:
+            with self._active_lock:
+                epoch = self._pause_epoch
+            self._check_interrupt(epoch)
             resp = self._get_session().get(url, stream=True, timeout=DOWNLOAD_TIMEOUT)
+            with self._active_lock:
+                self._active.add(resp)
             try:
-                check_file_reply(resp.status_code, getattr(resp, "headers", None))
-                total = 0
-                with open(part, "wb") as fh:
-                    for chunk in resp.iter_content(CHUNK):
-                        if chunk:
-                            fh.write(chunk)
-                            total += len(chunk)
+                try:
+                    self._check_interrupt(epoch)   # stop/pause raced the connect
+                    check_file_reply(resp.status_code, getattr(resp, "headers", None))
+                    total = 0
+                    with open(part, "wb") as fh:
+                        for chunk in resp.iter_content(CHUNK):
+                            self._check_interrupt(epoch)
+                            if chunk:
+                                fh.write(chunk)
+                                total += len(chunk)
+                    self._check_interrupt(epoch)
+                except Interrupted:
+                    keep = True
+                    raise
+                except Exception:
+                    # the read broke because stop/pause closed the response
+                    reason = self._interrupt_reason(epoch)
+                    if reason:
+                        keep = True
+                        raise Interrupted(reason)
+                    raise
             finally:
-                resp.close()
+                with self._active_lock:
+                    self._active.discard(resp)
+                _abort_response(resp)
             if total == 0:
                 raise RuntimeError("empty download")
             os.replace(part, dest)
             return total
         except BaseException:
+            if keep:
+                raise
             try:
                 part.unlink()
             except FileNotFoundError:
