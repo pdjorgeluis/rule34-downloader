@@ -95,7 +95,7 @@ Neither script touches the user's settings or downloads.
 
 ## Build for Windows
 
-This recipe was written on Linux. It has run and passed on a GitHub `windows-latest` runner: the log ends with `SMOKE OK (frozen exe)` and `BUILD OK`, and the zip (about 45 MB) starts and shows its window. The script has not been used by hand on a Windows desktop. The Windows run of the unit tests shows about 32 failures and errors, mostly tests that expect Linux (bash scripts, the installer) plus some path, shortcut and timing tests. They are an open item and do not stop the build.
+This recipe was written on Linux. It has run and passed on a GitHub `windows-latest` runner: the log ends with `SMOKE OK (frozen exe)` and `BUILD OK`, and the zip (about 45 MB) starts and shows its window. The script has not been used by hand on a Windows desktop. The unit tests also run on that runner and pass: 603 tests, OK, 31 skipped (they test Linux-only features such as gio shares and the bash installer, or depend on font sizes), and 1 expected failure: stopping a download while a server stalls mid-file took 13 seconds on the runner. Stop was checked by hand on Windows and was instant in normal use, so this stays a noted risk.
 
 On Windows, create a virtual environment and install the build requirements:
 

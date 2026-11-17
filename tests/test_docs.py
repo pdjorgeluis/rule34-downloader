@@ -181,7 +181,7 @@ class DocsTests(unittest.TestCase):
         self.assertNotIn("UNTESTED", md)
         body = md.split("## Build for Windows", 1)[1]
         body = body.split("\n## ", 1)[0]
-        for needle in ("windows-latest", "SMOKE OK (frozen exe)", "not been used by hand",
+        for needle in ("windows-latest", "SMOKE OK (frozen exe)", "not been used by hand", "31 skipped", "1 expected failure",
                        "py -3.14 -m venv .venv",
                        r"build\rule34-downloader-1.0.0-windows-x86_64.zip", "Compress-Archive"):
             self.assertIn(needle, body, needle)
