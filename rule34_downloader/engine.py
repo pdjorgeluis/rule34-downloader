@@ -1,7 +1,10 @@
 """Download engine: paging, per-file downloads, workers, pause/stop, events."""
 from __future__ import annotations
 
+import contextlib
+import json
 import os
+import re
 import socket
 import threading
 import time
@@ -11,6 +14,11 @@ from pathlib import Path
 from typing import Callable, Optional
 
 import requests
+
+try:
+    import fcntl
+except ImportError:      # non-POSIX: the in-process lock only
+    fcntl = None
 
 from .api import ApiClient, ApiError
 from .backoff import Backoff, GiveUpClock
@@ -35,6 +43,97 @@ class Interrupted(Exception):
     def __init__(self, reason: str):
         super().__init__(reason)
         self.reason = reason   # "stop" | "pause"
+
+
+RESUME_TAIL = 64 * 1024
+_PART_BUSY = set()
+_PART_BUSY_LOCK = threading.Lock()
+
+
+def _unlink(p: Path) -> None:
+    try:
+        p.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _discard(part: Path, meta: Path) -> None:
+    _unlink(part)
+    _unlink(meta)
+
+
+def _header(headers, name: str):
+    for k, v in (headers or {}).items():
+        if str(k).lower() == name.lower():
+            return str(v)
+    return None
+
+
+def _write_meta(meta: Path, validator, total) -> None:
+    meta.write_text(json.dumps({"validator": validator, "total": total}))
+
+
+def _read_meta(meta: Path) -> dict:
+    try:
+        data = json.loads(meta.read_text())
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _read_total(meta: Path) -> Optional[int]:
+    t = _read_meta(meta).get("total")
+    return t if isinstance(t, int) and not isinstance(t, bool) and t > 0 else None
+
+
+def _resume_point(part: Path, meta: Path):
+    """(offset, validator) to resume from. Cuts the last 64 KiB off the .part;
+    a .part of 0 bytes (or one that cuts down to 0) means no resume."""
+    try:
+        n = part.stat().st_size
+    except FileNotFoundError:
+        _unlink(meta)
+        return 0, None
+    offset = max(0, n - RESUME_TAIL)
+    if offset == 0:
+        _discard(part, meta)
+        return 0, None
+    with open(part, "r+b") as fh:
+        fh.truncate(offset)
+    v = _read_meta(meta).get("validator")
+    return offset, v if isinstance(v, str) and v else None
+
+
+@contextlib.contextmanager
+def _part_lock(part: Path):
+    """Exclusive use of one .part: an in-process registry (two jobs in one
+    process) plus fcntl.flock on <part>.lock where available (two processes;
+    the kernel drops the lock on a crash, so none goes stale). Busy ->
+    TemporaryError (a normal file retry)."""
+    key = str(part)
+    with _PART_BUSY_LOCK:
+        if key in _PART_BUSY:
+            raise TemporaryError("file busy: another download owns the .part",
+                                 kind="http")
+        _PART_BUSY.add(key)
+    fd = None
+    try:
+        if fcntl is not None:
+            fd = os.open(key + ".lock", os.O_CREAT | os.O_RDWR, 0o644)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                raise TemporaryError("file busy: another process owns the .part",
+                                     kind="http")
+        yield
+    finally:
+        if fd is not None:
+            try:
+                _unlink(Path(key + ".lock"))
+            finally:
+                os.close(fd)
+        with _PART_BUSY_LOCK:
+            _PART_BUSY.discard(key)
 
 
 def _abort_response(resp):
@@ -481,49 +580,101 @@ class Job:
     def _download(self, url, dest: Path) -> int:
         part = dest.with_name(dest.name + ".part")
         dest.parent.mkdir(parents=True, exist_ok=True)
-        keep = False
+        with _part_lock(part):
+            return self._download_locked(url, dest, part)
+
+    def _download_locked(self, url, dest: Path, part: Path) -> int:
+        meta = part.with_name(part.name + ".meta")
+        keep = True      # the .part survives everything but a proven-bad state
         try:
             with self._active_lock:
                 epoch = self._pause_epoch
             self._check_interrupt(epoch)
-            resp = self._get_session().get(url, stream=True, timeout=DOWNLOAD_TIMEOUT)
-            with self._active_lock:
-                self._active.add(resp)
-            try:
-                try:
-                    self._check_interrupt(epoch)   # stop/pause raced the connect
-                    check_file_reply(resp.status_code, getattr(resp, "headers", None))
-                    total = 0
-                    with open(part, "wb") as fh:
-                        for chunk in resp.iter_content(CHUNK):
-                            self._check_interrupt(epoch)
-                            if chunk:
-                                fh.write(chunk)
-                                total += len(chunk)
-                    self._check_interrupt(epoch)
-                except Interrupted:
-                    keep = True
-                    raise
-                except Exception:
-                    # the read broke because stop/pause closed the response
-                    reason = self._interrupt_reason(epoch)
-                    if reason:
-                        keep = True
-                        raise Interrupted(reason)
-                    raise
-            finally:
+            offset, validator = _resume_point(part, meta)
+            for _ in range(2):
+                headers = {}
+                if offset > 0:
+                    headers["Range"] = f"bytes={offset}-"
+                    if validator:
+                        headers["If-Range"] = validator
+                kw = {"headers": headers} if headers else {}
+                resp = self._get_session().get(url, stream=True,
+                                               timeout=DOWNLOAD_TIMEOUT, **kw)
                 with self._active_lock:
-                    self._active.discard(resp)
-                _abort_response(resp)
-            if total == 0:
+                    self._active.add(resp)
+                try:
+                    try:
+                        self._check_interrupt(epoch)   # stop/pause raced the connect
+                        rh = getattr(resp, "headers", None) or {}
+                        if resp.status_code == 416 and offset > 0:
+                            _discard(part, meta)       # stale or oversized .part
+                            offset, validator = 0, None
+                            continue
+                        check_file_reply(resp.status_code, rh)
+                        size = self._write_body(resp, rh, part, meta, offset, epoch)
+                        self._check_interrupt(epoch)
+                    except Interrupted:
+                        raise
+                    except Exception:
+                        # the read broke because stop/pause closed the response
+                        reason = self._interrupt_reason(epoch)
+                        if reason:
+                            raise Interrupted(reason)
+                        raise
+                finally:
+                    with self._active_lock:
+                        self._active.discard(resp)
+                    _abort_response(resp)
+                break
+            else:
+                raise TemporaryError("HTTP 416 after restart", kind="http")
+            if size == 0:
+                keep = False
                 raise RuntimeError("empty download")
+            total = _read_total(meta)
+            if total is not None and size != total:
+                keep = False
+                raise TemporaryError(
+                    f"size mismatch: got {size} bytes, expected {total}", kind="http")
             os.replace(part, dest)
-            return total
-        except BaseException:
-            if keep:
-                raise
-            try:
-                part.unlink()
-            except FileNotFoundError:
-                pass
+            _unlink(meta)
+            return size
+        except PermanentError:
+            keep = False
             raise
+        except BaseException:
+            if not keep:
+                _discard(part, meta)
+            raise
+
+    def _write_body(self, resp, rh, part: Path, meta: Path, offset: int, epoch) -> int:
+        """Write the body to the .part; return the .part's final size."""
+        total = None
+        if resp.status_code == 206 and offset > 0:
+            m = re.match(r"\s*bytes\s+(\d+)-\d*/(\d+|\*)",
+                         _header(rh, "Content-Range") or "")
+            if not m or int(m.group(1)) != offset:
+                _discard(part, meta)
+                raise TemporaryError("unexpected Content-Range", kind="http")
+            if m.group(2) != "*":
+                total = int(m.group(2))
+            mode = "ab"
+        else:                                 # 200: truncate and restart
+            if not _header(rh, "Content-Encoding"):
+                cl = _header(rh, "Content-Length")
+                total = int(cl) if cl and cl.isdigit() else None
+            mode, offset = "wb", 0
+        if mode == "ab":
+            old = _read_meta(meta).get("validator")
+            _write_meta(meta, old if isinstance(old, str) else None, total)
+        else:
+            _write_meta(meta, _header(rh, "ETag") or _header(rh, "Last-Modified"),
+                        total)
+        written = 0
+        with open(part, mode) as fh:
+            for chunk in resp.iter_content(CHUNK):
+                self._check_interrupt(epoch)
+                if chunk:
+                    fh.write(chunk)
+                    written += len(chunk)
+        return offset + written

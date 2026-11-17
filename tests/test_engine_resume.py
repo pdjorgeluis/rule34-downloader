@@ -156,9 +156,9 @@ class ResumeTests(ResumeBase):
     def test_416_discards_part_and_restarts(self):
         srv = self.server()
         # stale validator absent, junk longer than the server file
-        self.make_part(b"x" * (len(SOURCE) + 10 * KIB), validator=None)
+        self.make_part(b"x" * (len(SOURCE) + 100 * KIB), validator=None)
         self.run_ok(srv)
-        self.assertEqual(srv.seen[0][0], f"bytes={len(SOURCE) + 10 * KIB - 64 * KIB}-")
+        self.assertEqual(srv.seen[0][0], f"bytes={len(SOURCE) + 100 * KIB - 64 * KIB}-")
         # after the 416 the file was requested again from zero (no Range)
         self.assertEqual(srv.seen[-1][0], None)
 
