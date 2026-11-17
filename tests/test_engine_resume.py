@@ -194,7 +194,7 @@ class ResumeTests(ResumeBase):
 
         def crash(epoch):
             calls["n"] += 1
-            if calls["n"] == 8:           # inside the chunk loop
+            if calls["n"] == 5:           # inside the chunk loop (3rd chunk of 4 x 256 KiB)
                 raise ConnectionError("simulated crash")
 
         with mock.patch.object(job1, "_check_interrupt", crash):
