@@ -17,6 +17,8 @@ SPEC = PKG / "rule34-downloader.spec"
 SIZES = (16, 24, 32, 48, 64, 128, 256, 512)
 
 
+from platform_skips import linux_only  # noqa: E402
+
 def listing(path):
     return sorted(str(p.relative_to(path)) for p in Path(path).rglob("*"))
 
@@ -98,11 +100,15 @@ class PackagingTests(unittest.TestCase):
         self.assertIn("${tpl//@EXEC@/$exec_path}", INSTALL.read_text())
         self.assertNotIn("sed", INSTALL.read_text())
 
+    @linux_only
+
     def test_shell_scripts_pass_bash_n(self):
         for script in (BUILD, INSTALL, UNINSTALL):
             r = subprocess.run(["bash", "-n", str(script)], capture_output=True,
                                text=True, timeout=5)
             self.assertEqual(r.returncode, 0, f"{script}: {r.stderr}")
+
+    @linux_only
 
     def test_install_script_refuses_to_run_without_a_source_dir(self):
         with tempfile.TemporaryDirectory() as prefix, tempfile.TemporaryDirectory() as home:
@@ -120,6 +126,8 @@ class PackagingTests(unittest.TestCase):
                 r = run_sh(INSTALL, [str(src)], prefix=bad, home=home)
                 self.assertEqual(r.returncode, 2, bad)
                 self.assertIn("error: invalid PREFIX", r.stderr)
+
+    @linux_only
 
     def test_install_and_uninstall_roundtrip_in_a_temp_prefix(self):
         with tempfile.TemporaryDirectory() as base, tempfile.TemporaryDirectory() as prefix, \
@@ -149,6 +157,8 @@ class PackagingTests(unittest.TestCase):
                 self.assertFalse((p / f"share/icons/hicolor/{n}x{n}/apps/rule34-downloader.png").exists())
             self.assertEqual(listing(home), [])
 
+    @linux_only
+
     def test_install_with_space_and_percent_in_prefix_quotes_exec(self):
         with tempfile.TemporaryDirectory() as base, tempfile.TemporaryDirectory() as home:
             src = make_source(base)
@@ -158,6 +168,8 @@ class PackagingTests(unittest.TestCase):
             desktop = (prefix / "share/applications/rule34-downloader.desktop").read_text()
             expected = str(prefix / "bin/rule34-downloader").replace("%", "%%")
             self.assertIn(f'Exec="{expected}"\n', desktop)
+
+    @linux_only
 
     def test_install_never_writes_outside_the_prefix(self):
         with tempfile.TemporaryDirectory() as base, tempfile.TemporaryDirectory() as prefix, \
@@ -174,6 +186,8 @@ class PackagingTests(unittest.TestCase):
             self.assertEqual(listing(base), ["built", "built/_internal",
                                              "built/_internal/data.txt", "built/rule34-downloader"])
 
+    @linux_only
+
     def test_uninstall_when_nothing_installed_is_a_noop(self):
         with tempfile.TemporaryDirectory() as prefix, tempfile.TemporaryDirectory() as home:
             r = run_sh(UNINSTALL, prefix=prefix, home=home)
@@ -186,6 +200,8 @@ class PackagingTests(unittest.TestCase):
         lines = (ROOT / ".gitignore").read_text().splitlines()
         self.assertIn("build/", lines)
         self.assertIn("dist/", lines)
+
+    @linux_only
 
     def test_build_script_fails_clearly_without_pyinstaller(self):
         env = {"PATH": os.environ["PATH"], "HOME": "/nonexistent-home",

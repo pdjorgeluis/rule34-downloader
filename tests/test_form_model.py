@@ -130,8 +130,8 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(fm.query_preview(V(exclude_text="cat")), "")
 
     def test_dest_preview_with_and_without_search_subfolder(self):
-        self.assertEqual(fm.dest_preview(V(include_text="cat, dog")), "/tmp/x/cat+dog")
-        self.assertEqual(fm.dest_preview(V(include_text="cat", by_search=False)), "/tmp/x")
+        self.assertEqual(fm.dest_preview(V(include_text="cat, dog")), str(Path("/tmp/x") / "cat+dog"))
+        self.assertEqual(fm.dest_preview(V(include_text="cat", by_search=False)), str(Path("/tmp/x")))
         self.assertEqual(fm.dest_preview(V(include_text="")), "")
         self.assertEqual(fm.dest_preview(V(include_text="a~b")), "")
         self.assertEqual(fm.dest_preview(V(folder="")), "")

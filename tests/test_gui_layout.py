@@ -12,6 +12,8 @@ if HAVE_QT:
     RUN_TYPES = (QPushButton, QProgressBar)
 
 
+from platform_skips import font_metrics  # noqa: E402
+
 class LayoutTests(GuiCase):
     def settled(self):
         w = self.window()
@@ -37,6 +39,8 @@ class LayoutTests(GuiCase):
         m = self.window().minimumSize()
         self.assertEqual((m.width(), m.height()), (800, 640))
 
+    @font_metrics
+
     def test_layout_minimum_hint_fits_inside_the_window_minimum(self):
         h = self.window().minimumSizeHint()
         self.assertLessEqual(h.width(), 800)
@@ -45,6 +49,8 @@ class LayoutTests(GuiCase):
     def test_form_controls_are_not_clipped_at_minimum_size(self):
         w = self.settled()
         self.assertEqual(self.clipped(w.search_form, FORM_TYPES), [])
+
+    @font_metrics
 
     def test_run_panel_controls_are_not_clipped_at_minimum_size(self):
         w = self.window()

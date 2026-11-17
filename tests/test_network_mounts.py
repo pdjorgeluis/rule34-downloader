@@ -83,6 +83,8 @@ sleep 30
 }
 
 
+from platform_skips import linux_only  # noqa: E402
+
 def make_gio(tmp, mode="ok"):
     tmp = Path(tmp)
     (tmp / "ai-data").mkdir(exist_ok=True)
@@ -115,6 +117,8 @@ class NetworkMountsTests(unittest.TestCase):
                 "Mount(3): ok one -> smb://h/s/  \n")
         self.assertEqual(parse_mount_list(text), [("ok one", "smb://h/s/")])
         self.assertEqual(parse_mount_list(""), [])
+
+    @linux_only
 
     def test_list_mounts_returns_only_mounts_with_existing_local_path(self):
         gio = make_gio(self.tmp)
@@ -165,10 +169,13 @@ class NetworkMountsTests(unittest.TestCase):
         self.assertNotIn("@", build_uri("h", "s"))
 
     # --- mounting through the fake gio ---------------------------------
+    @linux_only
     def test_mount_share_succeeds_with_fake_gio_prompts(self):
         gio = make_gio(self.tmp, "ok")
         res = mount_share("nas", "my docs", "me", SECRET, "WG", gio=gio, timeout=10)
         self.assertEqual((res.ok, res.kind, res.message), (True, "ok", "Connected."))
+
+    @linux_only
 
     def test_mount_share_wrong_password_reports_bad_credentials(self):
         gio = make_gio(self.tmp, "ok")
@@ -176,6 +183,8 @@ class NetworkMountsTests(unittest.TestCase):
         self.assertFalse(res.ok)
         self.assertEqual(res.kind, "bad_credentials")
         self.assertEqual(res.message, "The user name or password was not accepted.")
+
+    @linux_only
 
     def test_mount_share_unreachable_reports_gio_error_without_password(self):
         gio = make_gio(self.tmp, "unreachable")
@@ -185,6 +194,8 @@ class NetworkMountsTests(unittest.TestCase):
         self.assertIn("Connection refused", res.message)
         self.assertNotIn(SECRET, res.message)
         self.assertLessEqual(len(res.message), 200)
+
+    @linux_only
 
     def test_password_never_in_argv_env_or_result(self):
         gio = make_gio(self.tmp, "record")
@@ -214,6 +225,8 @@ class NetworkMountsTests(unittest.TestCase):
         self.assertEqual((res3.ok, res3.kind, res3.message),
                          (False, "invalid", "Enter the password."))
         ex.assert_not_called()
+
+    @linux_only
 
     def test_mount_share_times_out_and_kills_child(self):
         gio = make_gio(self.tmp, "hang")

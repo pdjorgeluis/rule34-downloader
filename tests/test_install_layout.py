@@ -27,6 +27,8 @@ SIZES = (16, 24, 32, 48, 64, 128, 256, 512)
 USAGE = "usage: install.sh <path to the built rule34-downloader directory>"
 
 
+from platform_skips import linux_only  # noqa: E402
+
 def section(text, title):
     """Return the body of the '## title' section."""
     m = re.search(r"^## %s\n(.*?)(?=^## |\Z)" % re.escape(title), text,
@@ -72,6 +74,8 @@ class TarballLayoutTests(unittest.TestCase):
         return run(["bash", str(self.app / "install" / "install.sh"), *args],
                    self.prefix, self.home)
 
+    @linux_only
+
     def test_install_script_finds_icons_next_to_itself_in_tarball_layout(self):
         r = self.install()
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -79,6 +83,8 @@ class TarballLayoutTests(unittest.TestCase):
             icon = (self.prefix / "share/icons/hicolor" / ("%dx%d" % (n, n))
                     / "apps" / (NAME + ".png"))
             self.assertTrue(icon.is_file(), str(icon))
+
+    @linux_only
 
     def test_install_without_args_uses_parent_when_it_holds_the_binary(self):
         r = self.install()
@@ -89,11 +95,15 @@ class TarballLayoutTests(unittest.TestCase):
         self.assertEqual(os.readlink(link),
                          str(self.prefix / "lib" / NAME / NAME))
 
+    @linux_only
+
     def test_install_without_args_in_repo_layout_still_prints_usage(self):
         r = run(["bash", str(LINUX / "install.sh")], self.prefix, self.home)
         self.assertEqual(r.returncode, 2)
         self.assertIn(USAGE, r.stderr)
         self.assertEqual(list(self.prefix.iterdir()), [])
+
+    @linux_only
 
     def test_tarball_layout_roundtrip_in_temp_prefix(self):
         for _ in range(2):  # the second run proves idempotence

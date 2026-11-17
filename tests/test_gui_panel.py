@@ -408,7 +408,7 @@ class FlowTests(PanelCase):
         with mock.patch("rule34_downloader.gui.run_panel.QDesktopServices.openUrl") as opener:
             self.panel.open_folder_button.click()
         opener.assert_called_once()
-        self.assertEqual(opener.call_args[0][0].toLocalFile(), str(folder))
+        self.assertEqual(Path(opener.call_args[0][0].toLocalFile()), folder)  # / and \ are equal as Paths
 
     def test_settings_button_disabled_while_running(self):
         w = self.window()

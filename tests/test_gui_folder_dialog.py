@@ -31,6 +31,8 @@ NAME = "ai-data on 10.1.2.13"
 URI = "smb://10.1.2.13/ai-data/"
 
 
+from platform_skips import linux_only  # noqa: E402
+
 @unittest.skipUnless(HAVE_QT, "PySide6 not installed")
 class FolderDialogCase(GuiCase):
     def setUp(self):
@@ -103,6 +105,8 @@ class FolderDialogCase(GuiCase):
         box = dlg.findChild(QDialogButtonBox)
         return next((b for b in box.buttons() if "Connect" in b.text()), None)
 
+    @linux_only
+
     def test_build_dialog_is_non_native_directory_dialog_with_dirs_only(self):
         dlg = self.build()
         self.assertEqual(dlg.fileMode(), QFileDialog.FileMode.Directory)
@@ -120,6 +124,8 @@ class FolderDialogCase(GuiCase):
             dlg = self.build()
         self.assertTrue(dlg.testOption(QFileDialog.Option.DontUseNativeDialog))
 
+    @linux_only
+
     def test_sidebar_lists_each_mount_with_its_name(self):
         dlg = self.build()
         urls = [u.toLocalFile() for u in dlg.sidebarUrls()]
@@ -132,6 +138,8 @@ class FolderDialogCase(GuiCase):
                 if model.index(i, 0).data(Qt.ItemDataRole.UserRole + 1)
                 == QUrl.fromLocalFile(str(self.share))]
         self.assertEqual(ours, [NAME])
+
+    @linux_only
 
     def test_sidebar_label_survives_navigation(self):
         dlg = self.build()
@@ -178,6 +186,8 @@ class FolderDialogCase(GuiCase):
         self.app.processEvents()
         self.assertEqual(seen, [dlg])
         self.assertTrue(dlg.isVisible())
+
+    @linux_only
 
     def test_connect_success_refreshes_sidebar_and_enters_the_share(self):
         other = self.tmp / "elsewhere"
@@ -348,10 +358,14 @@ class FolderDialogCase(GuiCase):
         d.mkdir()
         return Mount(label, f"smb://10.1.2.13/{name}/", str(d))
 
+    @linux_only
+
     def test_settings_are_redirected_to_a_temp_dir_in_gui_tests(self):
         name = self.qt_settings().fileName()
         self.assertFalse(name.startswith(os.path.expanduser("~/.config")))
         self.assertTrue(name.startswith(redirect_qt_settings()))
+
+    @linux_only
 
     def test_sidebar_rows_stay_fixed_after_repeated_opens(self):
         # 5 loops measured under 3 s on this machine
@@ -367,6 +381,8 @@ class FolderDialogCase(GuiCase):
         dlg = self.build()
         self.assertEqual(len(self.rows(dlg)), 4)
 
+    @linux_only
+
     def test_stale_saved_shortcuts_are_ignored(self):
         self.clear_saved_dialog_state()
         st = self.qt_settings()
@@ -377,6 +393,8 @@ class FolderDialogCase(GuiCase):
         dlg = self.build()
         self.assertEqual(len(self.rows(dlg)), 3)
         self.assertEqual(len(dlg.sidebarUrls()), 3)
+
+    @linux_only
 
     def test_mount_paths_are_not_saved_when_dialog_is_destroyed(self):
         self.clear_saved_dialog_state()
@@ -394,6 +412,8 @@ class FolderDialogCase(GuiCase):
         for url in saved:
             self.assertNotIn(self.mount.path.rstrip("/"), url)
             self.assertNotIn("ai-data", url)
+
+    @linux_only
 
     def test_duplicate_mounts_give_one_row(self):
         self.list_fake.return_value = [self.mount, self.mount]

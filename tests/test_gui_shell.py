@@ -394,7 +394,7 @@ class NonGuiTests(unittest.TestCase):
 @unittest.skipUnless(HAVE_QT, "GUI shell tests need PySide6")
 class LogoTests(unittest.TestCase):
     def test_logo_svg_sha256_matches_steward_asset(self):
-        self.assertEqual(hashlib.sha256(LOGO.read_bytes()).hexdigest(), LOGO_SHA256)
+        self.assertEqual(hashlib.sha256(LOGO.read_bytes().replace(b"\r\n", b"\n")).hexdigest(), LOGO_SHA256)
 
     def test_logo_svg_is_wellformed_xml_and_has_no_script_or_external_refs(self):
         root = ET.fromstring(LOGO.read_bytes())
