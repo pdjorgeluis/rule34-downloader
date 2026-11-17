@@ -27,6 +27,12 @@ jobs:
           py -3.14 -m venv .venv
           .venv\Scripts\python.exe -m pip install -r requirements-build.txt
 
+      - name: Regenerate the icons from the logo
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: .venv\Scripts\python.exe packaging\make_icons.py
+
       - name: Run the tests (informational; some tests are Linux-only)
         continue-on-error: true
         shell: pwsh

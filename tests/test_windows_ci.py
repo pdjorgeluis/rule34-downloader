@@ -17,6 +17,12 @@ class WindowsWorkflowTest(unittest.TestCase):
         self.assertIn("runs-on: windows-latest", text)
         self.assertIn("scripts\\build-windows.ps1", text)
 
+    def test_regenerates_the_icons_before_the_build(self):
+        # The icon files are binary and are not stored in the CI repo copy.
+        text = WORKFLOW.read_text()
+        self.assertIn("packaging\\make_icons.py", text)
+        self.assertLess(text.index("make_icons.py"), text.index("build-windows.ps1"))
+
     @unittest.skipIf(yaml is None, "PyYAML not installed")
     def test_is_valid_yaml_and_uploads_the_zip(self):
         yaml = self.yaml
