@@ -58,7 +58,7 @@ class DocsTests(unittest.TestCase):
     def test_readme_explains_how_to_install_and_use_it_on_windows(self):
         md = text(README)
         body = md.split("## Install on Windows", 1)[1].split("\n## ", 1)[0]
-        for needle in ("rule34-downloader-1.0.0-windows-x86_64.zip", "rule34-downloader.exe",
+        for needle in ("rule34-downloader-1.1.0-windows-x86_64.zip", "rule34-downloader.exe",
                        "SmartScreen", "More info", "Run anyway", "Network",
                        r"\\server\share", "whole folder"):
             self.assertIn(needle, body, needle)
@@ -183,7 +183,7 @@ class DocsTests(unittest.TestCase):
         body = body.split("\n## ", 1)[0]
         for needle in ("windows-latest", "SMOKE OK (frozen exe)", "not been used by hand", "31 skipped", "1 expected failure",
                        "py -3.14 -m venv .venv",
-                       r"build\rule34-downloader-1.0.0-windows-x86_64.zip", "Compress-Archive"):
+                       r"build\rule34-downloader-1.1.0-windows-x86_64.zip", "Compress-Archive"):
             self.assertIn(needle, body, needle)
         self.assertIn("windows-latest", text(PS1))
         self.assertNotIn("UNTESTED", text(PS1))

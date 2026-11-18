@@ -6,7 +6,7 @@ Rule34 Downloader is a desktop app and a command-line tool. It downloads picture
 
 It downloads only what you ask for, one search at a time. It never runs by itself in the background.
 
-The app is at version 1.0.0. It was developed and tested with Python 3.14. The window needs PySide6-Essentials 6.12.0. The command line needs only `requests`.
+The app is at version 1.1.0. It was developed and tested with Python 3.14. The window needs PySide6-Essentials 6.12.0. The command line needs only `requests`.
 
 ## Install on Linux
 
@@ -15,7 +15,7 @@ You can use a packaged build. Nothing is installed system-wide.
 Unpack the tarball:
 
 ```
-tar -xzf rule34-downloader-1.0.0-linux-x86_64.tar.gz
+tar -xzf rule34-downloader-1.1.0-linux-x86_64.tar.gz
 ```
 
 The tarball is about 82 MB. The unpacked folder is about 210 MB.
@@ -46,7 +46,7 @@ To build the tarball yourself, see `BUILD.md`.
 
 There is no installer. You get a zip with the whole program in a folder.
 
-1. Get `rule34-downloader-1.0.0-windows-x86_64.zip`. If you take it from the GitHub Actions page, GitHub wraps it in another zip: unzip that first.
+1. Get `rule34-downloader-1.1.0-windows-x86_64.zip`. If you take it from the GitHub Actions page, GitHub wraps it in another zip: unzip that first.
 2. Unzip it to a folder you keep, for example `C:\r34`.
 3. Open the `rule34-downloader` folder and double-click `rule34-downloader.exe`. Keep the whole folder together: the program needs the files beside it.
 4. Windows SmartScreen may say "Windows protected your PC", because the program is not signed. Click More info, then Run anyway.

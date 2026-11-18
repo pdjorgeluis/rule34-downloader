@@ -65,7 +65,7 @@ INSTALL CHECK OK
 BUILD OK build/rule34-downloader-<version>-linux-<arch>.tar.gz
 ```
 
-For version 1.0.0 on x86_64 the tarball is `build/rule34-downloader-1.0.0-linux-x86_64.tar.gz`. It is about 82 MB. The unpacked folder is about 210 MB.
+For version 1.1.0 on x86_64 the tarball is `build/rule34-downloader-1.1.0-linux-x86_64.tar.gz`. It is about 82 MB. The unpacked folder is about 210 MB.
 
 Tarball contents: the top folder is `rule34-downloader/`, the PyInstaller app. Inside it, `install/install.sh` and `install/uninstall.sh` install and remove the app, `install/rule34-downloader.desktop` is the desktop entry template, and `install/icons/` holds the 8 PNG icons. Someone who has only the tarball can install it with no source tree.
 
@@ -110,7 +110,7 @@ Run the build script:
 powershell -ExecutionPolicy Bypass -File scripts\build-windows.ps1
 ```
 
-The output is `build\rule34-downloader-1.0.0-windows-x86_64.zip`.
+The output is `build\rule34-downloader-1.1.0-windows-x86_64.zip`.
 
 The script builds with PyInstaller and then smoke-tests the exe. A windowed Windows build has no standard output, so `--smoke` and `--version` print nothing there. The script therefore runs the exe with `--screenshot` and requires exit code 0 and a non-empty picture file. The last line is `BUILD OK ...`.
 

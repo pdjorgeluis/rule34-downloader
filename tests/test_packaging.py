@@ -46,7 +46,7 @@ class PackagingTests(unittest.TestCase):
     def test_version_is_semver_string(self):
         from rule34_downloader.version import __version__
         self.assertRegex(__version__, r"^\d+\.\d+\.\d+$")
-        self.assertEqual(__version__, "1.0.0")
+        self.assertEqual(__version__, "1.1.0")
 
     def test_requirements_build_pins_pyinstaller_exactly(self):
         lines = (ROOT / "requirements-build.txt").read_text().splitlines()

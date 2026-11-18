@@ -33,7 +33,7 @@ class PackagingGuiTests(unittest.TestCase):
             r = subprocess.run([sys.executable, "-m", "rule34_downloader.gui", "--version"],
                                cwd=ROOT, env=env, capture_output=True, text=True, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(r.stdout.strip(), "Rule34 Downloader 1.0.0")
+        self.assertEqual(r.stdout.strip(), "Rule34 Downloader 1.1.0")
 
     def test_version_flag_creates_no_window_and_no_config(self):
         with tempfile.TemporaryDirectory() as home:
@@ -42,7 +42,7 @@ class PackagingGuiTests(unittest.TestCase):
             r = subprocess.run([sys.executable, "-m", "rule34_downloader.gui", "--version"],
                                cwd=ROOT, env=env, capture_output=True, text=True, timeout=30)
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertEqual(r.stdout.strip(), "Rule34 Downloader 1.0.0")
+            self.assertEqual(r.stdout.strip(), "Rule34 Downloader 1.1.0")
             self.assertEqual(tree(home), [])
 
     def test_make_icons_writes_all_sizes_and_ico(self):
